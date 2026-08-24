@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PermRepo — NFT Kalšana</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="container text-center">
+    <h1>🔒 PermRepo NFT</h1>
+    <p class="subtitle">Izveido NFT savam repozitorijam</p>
+    
+    <div class="info-row text-left">
+        <span class="info-label">Repo</span>
+        <input type="text" id="repoInput" placeholder="piem., lietotajs/repo" value="">
+    </div>
+    
+    <div class="info-row text-left">
+        <span class="info-label">Maksa</span>
+        <span class="info-value">Bezmaksas</span>
+    </div>
+    
+    <button id="mintButton" class="sign-button" disabled>⏳ Gaida savienojumu...</button>
+    <div class="status" id="status"></div>
+    <div class="error" id="error"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+<script type="module" src="js/nft.js"></script>
+</body>
+</html>
