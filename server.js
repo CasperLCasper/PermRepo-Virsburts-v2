@@ -83,7 +83,9 @@ const SUBSCRIPTION_ABI = [
 
 const TREASURY_ABI = [
     "function payTurbo(uint256 amount, bytes32 paymentId, address payable destination) external",
-    "function balance() external view returns (uint256)"
+    "function balance() external view returns (uint256)",
+    "function operator() external view returns (address)",
+    "function isOperator(address account) external view returns (bool)"
 ];
 
 app.use(express.json({ limit: '100mb' }));
@@ -646,6 +648,24 @@ app.post('/api/execute-backup', async (req, res) => {
             logInfo('Operatora adrese', operatorWallet.address);
             
             const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
+            
+            // ==================================================
+            // PĀRBAUDE: VAI OPERATORS IR ATĻAUTS
+            // ==================================================
+            const treasuryRead = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, provider);
+            const isOp = await treasuryRead.isOperator(operatorWallet.address);
+            logInfo('isOperator rezultāts', isOp);
+            
+            if (!isOp) {
+                logError('Operators nav atļauts Treasury līgumā');
+                return res.status(500).json({ success: false, error: 'Operators nav atļauts Treasury līgumā' });
+            }
+            
+            const operatorAddress = await treasuryRead.operator();
+            logInfo('Treasury operators', operatorAddress);
+            logInfo('Servera operators', operatorWallet.address);
+            // ==================================================
+            
             const filePaymentId = ethers.id(repoName + '-zip-' + Date.now().toString());
             const filePayTx = await treasuryWrite.payTurbo(fileCostWei, filePaymentId, turboAddress);
             await filePayTx.wait();
