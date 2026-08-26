@@ -64,24 +64,28 @@ async function init() {
 }
 
 async function checkSubscription() {
-    const response = await fetch('/api/subscription/status');
-    const data = await response.json();
-    
-    if (data.success) {
-        const button = document.getElementById('subscriptionButton');
-        document.getElementById('subscriptionSection').style.display = 'block';
+    try {
+        const response = await fetch('/api/subscription/status');
+        const data = await response.json();
         
-        if (data.isSubscribed) {
-            const daysLeft = Math.floor(Number(data.remainingTime) / 86400);
-            button.textContent = `📅 Abonements: AKTĪVS (${daysLeft} dienas)`;
-            button.className = 'subscription-button active';
-            button.disabled = true;
-        } else {
-            button.textContent = '📅 Abonements: BEIDZIES — ATJAUNOT';
-            button.className = 'subscription-button inactive';
-            button.disabled = false;
-            button.onclick = purchaseSubscription;
+        if (data.success) {
+            const button = document.getElementById('subscriptionButton');
+            document.getElementById('subscriptionSection').style.display = 'block';
+            
+            if (data.isSubscribed) {
+                const daysLeft = Math.floor(Number(data.remainingTime) / 86400);
+                button.textContent = `📅 Abonements: AKTĪVS (${daysLeft} dienas)`;
+                button.className = 'subscription-button active';
+                button.disabled = true;
+            } else {
+                button.textContent = '📅 Abonements: BEIDZIES — ATJAUNOT';
+                button.className = 'subscription-button inactive';
+                button.disabled = false;
+                button.onclick = purchaseSubscription;
+            }
         }
+    } catch (e) {
+        console.error('Abonementa pārbaudes kļūda:', e);
     }
 }
 
@@ -109,6 +113,7 @@ async function purchaseSubscription() {
         
         setStatus('✅ Abonements iegādāts!');
         await checkSubscription();
+        await loadRepos();
         
     } catch (e) {
         if (e.code === 'ACTION_REJECTED') {
@@ -145,47 +150,63 @@ async function connectWallet() {
 }
 
 async function loadRepos() {
-    const response = await fetch('/api/github/repos');
-    const data = await response.json();
-    
-    if (!data.success || data.repos.length === 0) {
-        showError('Nav atrasts neviens repozitorijs');
-        return;
-    }
-    
-    document.getElementById('repoSection').style.display = 'block';
-    const repoList = document.getElementById('repoList');
-    repoList.innerHTML = '';
-    
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const nftContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
-    
-    for (const repo of data.repos) {
-        const repoItem = document.createElement('div');
-        repoItem.className = 'repo-item';
+    try {
+        const response = await fetch('/api/github/repos');
+        const data = await response.json();
         
-        const repoHash = ethers.keccak256(
-            ethers.AbiCoder.defaultAbiCoder().encode(['string'], [repo.name])
-        );
-        const tokenId = await nftContract.repositoryTokens(repoHash);
+        if (!data.success || data.repos.length === 0) {
+            showError('Nav atrasts neviens repozitorijs');
+            return;
+        }
         
-        const hasNFT = tokenId !== 0n;
-        const statusClass = hasNFT ? 'status-has-nft' : 'status-no-nft';
-        const statusText = hasNFT ? '✅ NFT piesaistīts' : '❌ Nav NFT';
+        document.getElementById('repoSection').style.display = 'block';
+        const repoList = document.getElementById('repoList');
+        repoList.innerHTML = '';
         
-        repoItem.innerHTML = `
-            <div class="repo-info">
-                <div class="repo-name">${repo.name} ${repo.private ? '🔒' : ''}</div>
-                <div class="repo-desc">${repo.description || ''}</div>
-                <div class="repo-status ${statusClass}">${statusText}</div>
-            </div>
-            ${hasNFT ? 
-                `<button class="mint-button" onclick="openBackup('${repo.name}', '${tokenId}')">Atvērt backupu</button>` :
-                `<button class="mint-button" onclick="mintNFT('${repo.name}')">Izveidot NFT</button>`
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const nftContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
+        
+        for (const repo of data.repos) {
+            const repoItem = document.createElement('div');
+            repoItem.className = 'repo-item';
+            
+            const repoHash = ethers.keccak256(
+                ethers.AbiCoder.defaultAbiCoder().encode(['string'], [repo.name])
+            );
+            const tokenId = await nftContract.repositoryTokens(repoHash);
+            
+            const hasNFT = tokenId !== 0n;
+            const statusClass = hasNFT ? 'status-has-nft' : 'status-no-nft';
+            const statusText = hasNFT ? '✅ NFT piesaistīts' : '❌ Nav NFT';
+            
+            repoItem.innerHTML = `
+                <div class="repo-info">
+                    <div class="repo-name">${repo.name} ${repo.private ? '🔒' : ''}</div>
+                    <div class="repo-desc">${repo.description || ''}</div>
+                    <div class="repo-status ${statusClass}">${statusText}</div>
+                </div>
+            `;
+            
+            if (hasNFT) {
+                const backupButton = document.createElement('button');
+                backupButton.className = 'mint-button';
+                backupButton.textContent = 'Atvērt backupu';
+                backupButton.onclick = () => {
+                    window.location.href = `/backup.html?repo=${encodeURIComponent(repo.name)}`;
+                };
+                repoItem.appendChild(backupButton);
+            } else {
+                const mintButton = document.createElement('button');
+                mintButton.className = 'mint-button';
+                mintButton.textContent = 'Izveidot NFT';
+                mintButton.onclick = () => mintNFT(repo.name);
+                repoItem.appendChild(mintButton);
             }
-        `;
-        
-        repoList.appendChild(repoItem);
+            
+            repoList.appendChild(repoItem);
+        }
+    } catch (e) {
+        showError(e.message);
     }
 }
 
@@ -212,11 +233,6 @@ async function mintNFT(repoName) {
     }
 }
 
-async function openBackup(repoName, tokenId) {
-    setStatus(`Backups repo: ${repoName} (NFT #${tokenId})`);
-    // Šeit būs backup loģika
-}
-
 function setStatus(msg) { 
     document.getElementById('status').textContent = msg; 
 }
@@ -224,8 +240,5 @@ function setStatus(msg) {
 function showError(msg) { 
     document.getElementById('error').textContent = msg; 
 }
-
-window.mintNFT = mintNFT;
-window.openBackup = openBackup;
 
 init();
