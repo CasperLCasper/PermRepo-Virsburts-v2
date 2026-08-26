@@ -170,8 +170,11 @@ async function loadRepos() {
             const repoItem = document.createElement('div');
             repoItem.className = 'repo-item';
             
+            // PILNAIS repo nosaukums
+            const fullRepoName = `${githubUser}/${repo.name}`;
+            
             const repoHash = ethers.keccak256(
-                ethers.AbiCoder.defaultAbiCoder().encode(['string'], [repo.name])
+                ethers.AbiCoder.defaultAbiCoder().encode(['string'], [fullRepoName])
             );
             const tokenId = await nftContract.repositoryTokens(repoHash);
             
@@ -218,8 +221,11 @@ async function mintNFT(repoName) {
         const signer = await provider.getSigner();
         const nftWrite = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, signer);
         
+        // PILNAIS repo nosaukums
+        const fullRepoName = `${githubUser}/${repoName}`;
+        
         const nftImageURI = 'ar://placeholder';
-        const tx = await nftWrite.mintRepository(userAddress, repoName, nftImageURI);
+        const tx = await nftWrite.mintRepository(userAddress, fullRepoName, nftImageURI);
         await tx.wait();
         
         setStatus('✅ NFT izveidots!');
