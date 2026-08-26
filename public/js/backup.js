@@ -7,6 +7,7 @@ let userAddress = null;
 let signer = null;
 let repoName = null;
 let tokenId = null;
+let githubUser = null;
 
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
@@ -48,6 +49,8 @@ async function init() {
         return;
     }
     
+    githubUser = userData.user;
+    
     // 4. Savieno MetaMask
     if (!window.ethereum) {
         showError('Lūdzu instalē MetaMask!');
@@ -75,8 +78,10 @@ async function loadNFTInfo() {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const nftContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
         
+        // PILNAIS repo nosaukums
+        const fullRepoName = `${githubUser}/${repoName}`;
         const repoHash = ethers.keccak256(
-            ethers.AbiCoder.defaultAbiCoder().encode(['string'], [repoName])
+            ethers.AbiCoder.defaultAbiCoder().encode(['string'], [fullRepoName])
         );
         
         tokenId = await nftContract.repositoryTokens(repoHash);
@@ -110,6 +115,105 @@ async function loadNFTInfo() {
         showError(e.message);
     }
 }
+
+// ==================================================
+// MASTER KEY ĢENERĒŠANA (PIRMAIS BACKUPS)
+// ==================================================
+
+async function generateMasterKey(walletAddress, repoName, tokenId, githubUser) {
+    // 1. Kriptogrāfiski nejauši 64 baiti no crypto API
+    const cryptoRandom = new Uint8Array(64);
+    crypto.getRandomValues(cryptoRandom);
+    
+    // 2. Nejatība no ethers
+    const ethersRandom = ethers.randomBytes(64);
+    
+    // 3. MetaMask paraksts — papildu entropija
+    const message = [
+        'PermRepo Master Key',
+        `GitHub: ${githubUser}`,
+        `Repo: ${repoName}`,
+        `Token: ${tokenId}`,
+        `Wallet: ${walletAddress}`,
+        `Time: ${Date.now()}`,
+        `Nonce: ${Math.random().toString(36)}`
+    ].join('\n');
+    
+    const signature = await signer.signMessage(message);
+    
+    // 4. Apvieno visus entropijas avotus
+    const allEntropy = ethers.concat([
+        cryptoRandom,
+        ethersRandom,
+        ethers.getBytes(signature),
+        ethers.toUtf8Bytes(walletAddress),
+        ethers.toUtf8Bytes(githubUser),
+        ethers.toUtf8Bytes(repoName),
+        ethers.toUtf8Bytes(tokenId.toString())
+    ]);
+    
+    // 5. Vairākas jaukšanas kārtas (1000 iterācijas)
+    let masterKey = ethers.keccak256(allEntropy);
+    
+    for (let i = 0; i < 1000; i++) {
+        masterKey = ethers.keccak256(
+            ethers.concat([
+                masterKey,
+                ethers.toUtf8Bytes(i.toString())
+            ])
+        );
+    }
+    
+    return masterKey;
+}
+
+function showMasterKey(masterKey) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.8);
+        display: flex; justify-content: center; align-items: center;
+        z-index: 1000;
+    `;
+    
+    modal.innerHTML = `
+        <div style="background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px; max-width: 480px; width: 100%;">
+            <h2 style="color: #79c0ff; margin-bottom: 16px;">🔑 Tava Master Atslēga</h2>
+            <p style="color: #b0b8c4; margin-bottom: 16px;">Šī ir TAVA vienīgā atslēga visiem backupiem. Saglabā to drošā vietā!</p>
+            <div style="background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; word-break: break-all; font-family: monospace; color: #e6edf3;">
+                ${masterKey}
+            </div>
+            <button id="copyKeyBtn" style="width: 100%; padding: 12px; background: #238636; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">📋 Kopēt</button>
+            <button id="downloadKeyBtn" style="width: 100%; padding: 12px; background: #21262d; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">⬇️ Lejupielādēt</button>
+            <button id="closeModalBtn" style="width: 100%; padding: 12px; background: #f85149; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">Es saglabāju — Aizvērt</button>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById('copyKeyBtn').onclick = async () => {
+        await navigator.clipboard.writeText(masterKey);
+        document.getElementById('copyKeyBtn').textContent = '✅ Nokopēts!';
+    };
+    
+    document.getElementById('downloadKeyBtn').onclick = () => {
+        const blob = new Blob([masterKey], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `permrepo-master-key-${repoName.replace('/', '-')}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+    
+    document.getElementById('closeModalBtn').onclick = () => {
+        modal.remove();
+    };
+}
+
+// ==================================================
+// BACKUP PROCESS
+// ==================================================
 
 async function startBackup() {
     const button = document.getElementById('startBackupButton');
@@ -159,18 +263,40 @@ async function startBackup() {
         
         const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
         
+        // 3. Pārbauda, vai šis ir pirmais backups
+        const currentBackupCount = Number(prepareResult.backupCount || 0);
+        
+        let masterKey;
+        let isFirstBackup = false;
+        
+        if (currentBackupCount === 0) {
+            // PIRMAIS BACKUPS — ģenerē master key
+            setStatus('Ģenerē master atslēgu...');
+            button.textContent = '⏳ Atslēga...';
+            
+            const fullRepoName = `${githubUser}/${repoName}`;
+            masterKey = await generateMasterKey(userAddress, fullRepoName, tokenId, githubUser);
+            isFirstBackup = true;
+            
+            // Parāda master key lietotājam
+            showMasterKey(masterKey);
+        } else {
+            // Nav pirmais — lietotājs ievada master key
+            masterKey = prompt('Ievadi savu master atslēgu (atstāj tukšu publiskam repo):');
+            if (masterKey) {
+                masterKey = masterKey.trim();
+            }
+        }
+        
         setStatus('ZIP izveidots! Šifrē...');
         button.textContent = '⏳ Šifrē...';
         
-        // 3. Šifrē ZIP ar master key (ja lietotājs to ir ievadījis)
-        const masterKey = prompt('Ievadi savu master atslēgu (atstāj tukšu publiskam repo):');
-        
+        // 4. Šifrē ZIP ar master key
         let encryptedZip = zipBuffer;
         let iv = null;
         
         if (masterKey && masterKey.trim()) {
-            const derivedKey = deriveKeyFromMaster(masterKey.trim(), Number(prepareResult.backupCount) + 1);
-            const encrypted = await encryptData(zipBuffer, derivedKey);
+            const encrypted = await encryptData(zipBuffer, masterKey);
             encryptedZip = encrypted.encrypted;
             iv = encrypted.iv;
         }
@@ -178,17 +304,18 @@ async function startBackup() {
         setStatus('Augšupielādē ZIP...');
         button.textContent = '⏳ Augšupielāde...';
         
-        // 4. Augšupielādē ZIP un manifestu caur serveri
+        // 5. Augšupielādē ZIP un manifestu caur serveri
         const executeResponse = await fetch('/api/execute-backup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                repoName,
+                repoName: `${githubUser}/${repoName}`,
                 files,
                 tokenId: tokenId.toString(),
                 walletAddress: userAddress,
                 encryptedZip: Array.from(encryptedZip),
-                iv: iv ? Array.from(iv) : null
+                iv: iv ? Array.from(iv) : null,
+                fileCostEth: prepareResult.fileCostEth
             })
         });
         
@@ -204,18 +331,17 @@ async function startBackup() {
         setStatus('Manifests augšupielādēts! Paraksti transakciju...');
         button.textContent = '⏳ Paraksts...';
         
-        // 5. Paraksta addBackup() ar EIP-712
+        // 6. Paraksta addBackup() ar EIP-712
         const provider = new ethers.BrowserProvider(window.ethereum);
         const readContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
         
         const deadline = Math.floor(Date.now() / 1000) + 600;
         const currentNonce = await readContract.getNonce(tokenId);
-        const currentBackupCount = await readContract.getBackupCount(tokenId);
+        const onChainBackupCount = await readContract.getBackupCount(tokenId);
         
         const manifestURI = `ar://${executeResult.manifestTxId}`;
         const manifestHash = ethers.keccak256(ethers.toUtf8Bytes(manifestURI));
         
-        // Merkle sakne no failu hashiem
         const merkleRoot = calculateMerkleRoot(files);
         
         const domain = {
@@ -238,7 +364,7 @@ async function startBackup() {
         
         const value = {
             tokenId: BigInt(tokenId),
-            backupNumber: currentBackupCount + 1n,
+            backupNumber: onChainBackupCount + 1n,
             manifestHash,
             merkleRoot,
             deadline: BigInt(deadline),
@@ -247,7 +373,7 @@ async function startBackup() {
         
         const signature = await signer.signTypedData(domain, types, value);
         
-        // 6. Nosūta parakstu uz serveri, lai tas izsauc addBackup()
+        // 7. Nosūta parakstu uz serveri
         const finalizeResponse = await fetch('/api/finalize-backup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -265,7 +391,6 @@ async function startBackup() {
         if (finalizeResult.success) {
             setStatus('✅ Backups veiksmīgi pabeigts!');
             button.textContent = '✅ Pabeigts!';
-            
             await loadNFTInfo();
         } else {
             showError(finalizeResult.error || 'Kļūda');
@@ -284,10 +409,9 @@ async function startBackup() {
     }
 }
 
-function deriveKeyFromMaster(masterKey, backupNumber) {
-    const message = `${masterKey}:${backupNumber}`;
-    return ethers.keccak256(ethers.toUtf8Bytes(message));
-}
+// ==================================================
+// PALĪGFUNKCIJAS
+// ==================================================
 
 async function encryptData(data, keyHex) {
     const key = keyHex.slice(2);
