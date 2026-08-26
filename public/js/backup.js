@@ -11,7 +11,6 @@ let githubUser = null;
 let currentFileCostEth = '0';
 let currentManifestCostEth = '0';
 let currentNewUserCredits = '0';
-let currentNewManifestCredits = '0';
 let currentFileWinc = '0';
 let currentUserCredits = '0';
 let currentZipSize = 0;
@@ -287,15 +286,13 @@ async function startBackup() {
         
         // 3. PARĀDA INFORMĀCIJU
         currentManifestCostEth = prepareResult.fileCostEth;
+        const totalCostWei = ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth);
         
-        showBackupInfo(prepareResult, files);
+        showBackupInfo(prepareResult, files, totalCostWei);
         
         // 4. IEMAKSA
-        const totalCostWei = ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth);
-        const totalCostEth = ethers.formatEther(totalCostWei);
-        
         if (totalCostWei > 0n) {
-            setStatus(`Iemaksā Treasury: ${totalCostEth} ETH...`);
+            setStatus(`Iemaksā Treasury: ${ethers.formatEther(totalCostWei)} ETH...`);
             button.textContent = '⏳ Iemaksa...';
             
             const tx = await signer.sendTransaction({
@@ -427,6 +424,8 @@ async function startBackup() {
         const finalizeResult = await finalizeResponse.json();
         
         if (finalizeResult.success) {
+            const totalCostEth = ethers.formatEther(totalCostWei);
+            
             document.getElementById('status').innerHTML = `
                 ✅ Backups veiksmīgi pabeigts!<br><br>
                 📦 Manifests: <a href="${CONFIG.arweaveGateway}/raw/${executeResult.manifestTxId}" target="_blank">ar://${executeResult.manifestTxId}</a><br>
@@ -453,21 +452,17 @@ async function startBackup() {
     }
 }
 
-function showBackupInfo(prepareResult, files) {
-    const totalCostEth = ethers.formatEther(
-        ethers.parseEther(prepareResult.fileCostEth) + ethers.parseEther(prepareResult.fileCostEth)
-    );
+function showBackupInfo(prepareResult, files, totalCostWei) {
+    const totalCostEth = ethers.formatEther(totalCostWei);
     
     const infoHtml = `
         <div style="margin: 16px 0; padding: 16px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;">
             <h3 style="color: #79c0ff; margin-bottom: 12px;">📊 Backupa informācija</h3>
             <div style="color: #b0b8c4; font-size: 14px; line-height: 1.8;">
-                <div>📦 Mainītie faili: <strong style="color: #e6edf3;">${files.length}</strong></div>
-                <div>📁 Nemainītie faili: <strong style="color: #e6edf3;">${Object.keys(prepareResult.unchangedFiles || {}).length}</strong></div>
-                <div>📦 ZIP izmērs (aptuveni): <strong style="color: #e6edf3;">${(prepareResult.estimatedZipSize / 1024 / 1024).toFixed(2)} MB</strong></div>
-                <div>💰 Failu izmaksas: <strong style="color: #e6edf3;">${prepareResult.fileCostEth} ETH</strong></div>
-                <div>📄 Manifesta izmaksas: <strong style="color: #e6edf3;">${prepareResult.fileCostEth} ETH</strong></div>
-                <div>👛 Tavi kredīti: <strong style="color: #e6edf3;">${prepareResult.userCredits} winc</strong></div>
+                <div>📦 Failu skaits: <strong style="color: #e6edf3;">${files.length}</strong></div>
+                <div>📦 Failu izmērs: <strong style="color: #e6edf3;">${(prepareResult.totalBytes / 1024 / 1024).toFixed(2)} MB</strong></div>
+                <div>💳 Failu izmaksas: <strong style="color: #e6edf3;">${prepareResult.fileCostEth} ETH</strong></div>
+                <div>📄 Manifesta izmaksas: <strong style="color: #e6edf3;">${currentManifestCostEth} ETH</strong></div>
                 <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #30363d;">
                     💎 <strong style="color: #3fb950; font-size: 16px;">KOPĀ JĀMAKSĀ: ${totalCostEth} ETH</strong>
                 </div>
