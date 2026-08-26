@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PermRepo — Decentralizēta atjaunošana</title>
+    <title>PermRepo — Atjaunošana</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
@@ -13,8 +13,9 @@
         .info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #21262d; }
         .info-label { color: #b0b8c4; }
         .info-value { font-weight: 600; font-size: 14px; word-break: break-all; }
-        input { width: 100%; padding: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; color: #e6edf3; font-size: 16px; margin-top: 8px; margin-bottom: 16px; }
-        input:focus { outline: none; border-color: #58a6ff; }
+        input, textarea { width: 100%; padding: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; color: #e6edf3; font-size: 16px; margin-top: 8px; margin-bottom: 16px; }
+        input:focus, textarea:focus { outline: none; border-color: #58a6ff; }
+        textarea { min-height: 80px; resize: vertical; font-family: monospace; font-size: 14px; }
         button { width: 100%; padding: 14px; background: #238636; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 12px; transition: background 0.2s; }
         button:hover { background: #2ea043; }
         button:disabled { background: #21262d; color: #8b949e; cursor: not-allowed; }
@@ -31,12 +32,17 @@
 <body>
     <div class="container">
         <h1>🔓 PermRepo Atjaunošana</h1>
-        <p class="subtitle">Atjauno pilnu repozitoriju no Arweave — bez servera!</p>
+        <p class="subtitle">Atjauno GitHub repo no Arweave — bez servera!</p>
         
         <div class="info-row">
             <span class="info-label">Arweave manifests (TX ID vai ar://)</span>
         </div>
         <input type="text" id="manifestInput" placeholder="Piem.: ar://ABC123... vai https://ar-io.dev/raw/ABC123...">
+        
+        <div class="info-row">
+            <span class="info-label">Master atslēga</span>
+        </div>
+        <textarea id="masterKeyInput" placeholder="Ievadi savu master atslēgu..."></textarea>
         
         <div class="info-row">
             <span class="info-label">Savienotais maks</span>
@@ -54,16 +60,12 @@
         <div id="debugInfo" class="debug-info"></div>
     </div>
 
-    <!-- JSZip no CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    
-    <!-- Ethers no CDN -->
     <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
     
     <script>
         const { ethers } = window;
         
-        // Arweave vārtejas (gateways)
         const GATEWAYS = [
             'https://ar-io.dev',
             'https://arweave.net'
@@ -71,10 +73,6 @@
         
         let userAddress = null;
         let signer = null;
-        
-        // ============================================================
-        // PALĪGFUNKCIJAS | HELPERS
-        // ============================================================
         
         function showStatus(msg, type = 'status') {
             const el = document.getElementById('status');
@@ -122,10 +120,6 @@
             return fetchFromArweave(txId, gatewayIndex + 1);
         }
         
-        // ============================================================
-        // METAMASK SAVIENOŠANA | METAMASK CONNECT
-        // ============================================================
-        
         async function connectWallet() {
             if (!window.ethereum) {
                 showStatus('❌ Lūdzu instalē MetaMask!', 'error');
@@ -146,30 +140,33 @@
             }
         }
         
-        // ============================================================
-        // ŠIFRĒŠANAS ATSLĒGAS ATVASINĀŠANA | DERIVE ENCRYPTION KEY
-        // ============================================================
-        
-        async function getEncryptionKey() {
-            if (!signer || !userAddress) {
-                throw new Error('Nav savienots maks!');
+        function getMasterKeyFromInput() {
+            const input = document.getElementById('masterKeyInput').value.trim();
+            if (!input) {
+                throw new Error('Ievadi master atslēgu!');
             }
             
-            // 1. Izsaucam MetaMask parakstīšanu (standarta pieeja)
-            const message = 'PermRepo šifrēšanas atslēga';
-            const signature = await signer.signMessage(message);
+            // Master atslēga var būt hex string vai base64
+            if (input.startsWith('0x')) {
+                return input;
+            }
             
-            // 2. Atvasinām AES-256 atslēgu no paraksta
-            const key = ethers.keccak256(ethers.toUtf8Bytes(signature));
-            return key;
+            // Mēģina interpretēt kā hex
+            try {
+                return '0x' + input;
+            } catch {
+                return input;
+            }
         }
         
-        // ============================================================
-        // ATSLĒGAS PĀRVEIDE UZ CryptoKey | CONVERT KEY TO CryptoKey
-        // ============================================================
+        function deriveKeyFromMaster(masterKey, backupNumber) {
+            // HD atslēgu atvasināšana — vienkārša versija
+            const message = `${masterKey}:${backupNumber}`;
+            return ethers.keccak256(ethers.toUtf8Bytes(message));
+        }
         
-        async function getCryptoKey(keyHex) {
-            const key = keyHex.slice(2); // Noņemam "0x" prefiksu
+        async function importAESKey(keyHex) {
+            const key = keyHex.slice(2); // Noņem "0x"
             const keyBytes = new Uint8Array(32);
             for (let i = 0; i < 32; i++) {
                 keyBytes[i] = parseInt(key.substring(i * 2, i * 2 + 2), 16);
@@ -180,12 +177,8 @@
             );
         }
         
-        // ============================================================
-        // ATSIFRĒŠANA | DECRYPT
-        // ============================================================
-        
         async function decryptData(encryptedData, iv, keyHex) {
-            const cryptoKey = await getCryptoKey(keyHex);
+            const cryptoKey = await importAESKey(keyHex);
             const ivBytes = new Uint8Array(iv);
             const dataBytes = new Uint8Array(encryptedData);
             
@@ -198,12 +191,9 @@
             return new Uint8Array(decrypted);
         }
         
-        // ============================================================
-        // ATJAUNOŠANA | RESTORE
-        // ============================================================
-        
         async function restoreRepo() {
             const manifestInput = document.getElementById('manifestInput').value.trim();
+            const masterKey = getMasterKeyFromInput();
             
             if (!manifestInput) {
                 showStatus('❌ Ievadi manifesta TX ID vai ar:// saiti!', 'error');
@@ -215,7 +205,7 @@
                 return;
             }
             
-            // 1. Izgūstam manifesta TX ID no ievades
+            // 1. Izgūst manifesta TX ID
             let manifestTxId = manifestInput;
             if (manifestInput.startsWith('ar://')) {
                 manifestTxId = manifestInput.slice(5);
@@ -235,13 +225,8 @@
             document.getElementById('debugInfo').style.display = 'none';
             
             try {
-                // 2. Atvasinām atslēgu no MetaMask
-                showStatus('🔑 Atvasinām atslēgu...', 'status');
-                const encryptionKey = await getEncryptionKey();
-                showDebug('Atslēga iegūta');
-                
-                // 3. Lejupielādējam manifestu
-                showStatus('📥 Lejupielādējam manifestu...', 'status');
+                // 2. Lejupielādē manifestu
+                showStatus('📥 Lejupielādē manifestu...', 'status');
                 showProgress(5);
                 
                 const manifestBuffer = await fetchFromArweave(manifestTxId);
@@ -250,171 +235,66 @@
                 
                 const manifest = JSON.parse(manifestText);
                 
-                if (!manifest.paths || !manifest.history) {
-                    throw new Error('Nederīgs manifests! Nav paths vai history.');
+                if (!manifest.paths || !manifest.archive) {
+                    throw new Error('Nederīgs manifests!');
                 }
                 
                 showDebug('Failu skaits: ' + Object.keys(manifest.paths).length);
-                showDebug('Backupu skaits: ' + manifest.history.length);
+                showDebug('Backup numurs: ' + manifest.metadata?.backupNumber);
                 
-                // 4. Iegūstam visus backupus (no history + pašreizējais)
-                const allBackups = [
-                    {
-                        backupNumber: manifest.metadata?.backupNumber || 1,
-                        manifestId: manifestTxId,
-                        paths: manifest.paths,
-                        manifest: manifest
-                    },
-                    ...manifest.history.map(h => ({
-                        backupNumber: h.backupNumber,
-                        manifestId: h.manifestId,
-                        paths: null, // Mēs to ielādēsim vēlāk
-                        manifest: null
-                    }))
-                ];
-                
-                // 5. Lejupielādējam visus vecos manifestus, lai iegūtu paths un IV
-                showStatus('🔍 Lejupielādējam visus backupu manifestus...', 'status');
-                showProgress(15);
-                
-                for (let i = 0; i < allBackups.length; i++) {
-                    const backup = allBackups[i];
-                    if (!backup.paths) {
-                        try {
-                            const backupManifestBuffer = await fetchFromArweave(backup.manifestId);
-                            const backupManifestText = new TextDecoder().decode(backupManifestBuffer);
-                            const backupManifest = JSON.parse(backupManifestText);
-                            backup.paths = backupManifest.paths;
-                            backup.manifest = backupManifest;
-                            showDebug(`Backup #${backup.backupNumber}: ${Object.keys(backup.paths).length} faili`);
-                        } catch (e) {
-                            showDebug(`❌ Neizdevās iegūt backup #${backup.backupNumber}: ${e.message}`);
-                        }
-                    }
+                // 3. Iegūst ZIP ID
+                const zipId = manifest.archive.id;
+                if (!zipId) {
+                    throw new Error('Manifestā nav ZIP ID!');
                 }
                 
-                // 6. Apvienojam visus failus (ņemot vērā jaunāko versiju)
-                showStatus('🔄 Apvienojam failus no visiem backupiem...', 'status');
-                showProgress(30);
+                showDebug('ZIP ID: ' + zipId);
                 
-                const allPaths = {};
-                const backupNumbers = {};
+                // 4. Lejupielādē ZIP
+                showStatus('📦 Lejupielādē ZIP arhīvu...', 'status');
+                showProgress(20);
                 
-                // Vispirms apvienojam no visiem manifestiem
-                for (const backup of allBackups) {
-                    for (const [filePath, info] of Object.entries(backup.paths || {})) {
-                        if (!allPaths[filePath] || backup.backupNumber > backupNumbers[filePath]) {
-                            allPaths[filePath] = info;
-                            backupNumbers[filePath] = backup.backupNumber;
-                        }
-                    }
-                }
+                const zipBuffer = await fetchFromArweave(zipId);
+                showDebug(`ZIP lejupielādēts: ${zipBuffer.byteLength} baiti`);
                 
-                // 7. Iegūstam visus unikālos ZIP ID
-                const zipIds = new Set();
-                for (const [path, info] of Object.entries(allPaths)) {
-                    if (info.zipId) {
-                        zipIds.add(info.zipId);
-                    } else if (info.id) {
-                        zipIds.add(info.id);
-                    }
-                }
+                // 5. Atvasina atslēgu
+                const backupNumber = manifest.metadata?.backupNumber || 1;
+                const derivedKey = deriveKeyFromMaster(masterKey, backupNumber);
+                showDebug('Atslēga atvasināta');
                 
-                showDebug('Unikālie ZIP faili: ' + [...zipIds].join(', '));
-                
-                // 8. Lejupielādējam un izpakojam visus ZIP failus
-                showStatus(`📦 Lejupielādējam ${zipIds.size} arhīvus...`, 'status');
+                // 6. Atšifrē ZIP (ja IV ir manifestā)
+                showStatus('🔓 Atšifrē ZIP...', 'status');
                 showProgress(40);
                 
-                const zipContents = {};
-                let downloadedCount = 0;
+                let decryptedZipBuffer = zipBuffer;
                 
-                // Izveidojam IV mapi: zipId -> iv
-                const zipIVMap = {};
-                
-                // Analizējam visus manifestus, lai atrastu IV katram ZIP failam
-                for (const backup of allBackups) {
-                    if (backup.manifest && backup.manifest.encryption?.iv) {
-                        const iv = backup.manifest.encryption.iv;
-                        
-                        // Pievienojam IV visiem ZIP failiem, kas parādās šajā manifestā
-                        if (backup.manifest.paths) {
-                            for (const [filePath, info] of Object.entries(backup.manifest.paths)) {
-                                const zipId = info.zipId || info.id;
-                                if (zipId) {
-                                    zipIVMap[zipId] = iv;
-                                }
-                            }
-                        }
-                        
-                        // Pievienojam IV arī archive.id
-                        if (backup.manifest.archive?.id) {
-                            zipIVMap[backup.manifest.archive.id] = iv;
-                        }
-                    }
+                if (manifest.encryption?.iv) {
+                    const iv = manifest.encryption.iv;
+                    decryptedZipBuffer = await decryptData(zipBuffer, iv, derivedKey);
+                    showDebug('ZIP atšifrēts');
+                } else {
+                    showDebug('ZIP nav šifrēts (publisks repo)');
                 }
                 
-                // Tagad mēģinām atšifrēt katru ZIP failu ar tā atbilstošo IV
-                for (const zipId of zipIds) {
-                    try {
-                        const zipBuffer = await fetchFromArweave(zipId);
-                        
-                        // Atrodam IV šim ZIP failam
-                        const iv = zipIVMap[zipId] || manifest.encryption?.iv || [];
-                        
-                        const decryptedZipBuffer = await decryptData(zipBuffer, iv, encryptionKey);
-                        
-                        zipContents[zipId] = await JSZip.loadAsync(decryptedZipBuffer);
-                        showDebug(`✅ ZIP izpakots (atšifrēts): ${zipId}`);
-                    } catch (e) {
-                        showDebug(`❌ Neizdevās izpakot ${zipId}: ${e.message}`);
-                    }
-                    
-                    downloadedCount++;
-                    showProgress(40 + (downloadedCount / zipIds.size) * 30);
-                }
+                // 7. Izpako ZIP
+                showStatus('📂 Izpako failus...', 'status');
+                showProgress(60);
                 
-                // 9. Izvelkam visus failus no ZIP failiem
-                showStatus('📂 Izvelkam failus...', 'status');
-                showProgress(75);
+                const zip = await JSZip.loadAsync(decryptedZipBuffer);
                 
                 const finalFiles = {};
-                
-                for (const [filePath, info] of Object.entries(allPaths)) {
-                    const zipId = info.zipId || info.id;
-                    const zip = zipContents[zipId];
-                    
-                    if (zip) {
-                        let fileData = null;
-                        
-                        // Mēģinām atrast failu pēc ceļa
-                        if (zip.file(filePath)) {
-                            fileData = await zip.file(filePath).async('uint8array');
-                            showDebug(`✅ Atjaunots: ${filePath}`);
-                        } else {
-                            // Mēģinām atrast pēc faila nosaukuma
-                            const fileName = filePath.split('/').pop();
-                            const matchingFile = Object.values(zip.files).find(f => 
-                                f.name === fileName || f.name.endsWith('/' + fileName)
-                            );
-                            
-                            if (matchingFile) {
-                                fileData = await matchingFile.async('uint8array');
-                                showDebug(`✅ Atjaunots (pēc nosaukuma): ${filePath}`);
-                            } else {
-                                showDebug(`❌ Nav atrasts ZIP: ${filePath}`);
-                            }
-                        }
-                        
-                        if (fileData) {
-                            finalFiles[filePath] = fileData;
-                        }
+                for (const [filePath, fileEntry] of Object.entries(zip.files)) {
+                    if (!fileEntry.dir) {
+                        const fileData = await fileEntry.async('uint8array');
+                        finalFiles[filePath] = fileData;
                     }
                 }
                 
-                // 10. Izveidojam galīgo ZIP failu
-                showStatus(`📦 Veidojam ZIP ar ${Object.keys(finalFiles).length} failiem...`, 'status');
-                showProgress(90);
+                showDebug('Atjaunoti faili: ' + Object.keys(finalFiles).length);
+                
+                // 8. Izveido galīgo ZIP
+                showStatus(`📦 Veido ZIP ar ${Object.keys(finalFiles).length} failiem...`, 'status');
+                showProgress(80);
                 
                 const finalZip = new JSZip();
                 for (const [filePath, data] of Object.entries(finalFiles)) {
@@ -423,13 +303,14 @@
                 
                 const finalBlob = await finalZip.generateAsync({ type: 'blob' });
                 
-                // 11. Lejupielādējam
+                // 9. Lejupielādē
                 showProgress(100);
                 
+                const repoName = manifest.metadata?.repo || 'repo';
                 const url = URL.createObjectURL(finalBlob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${manifest.metadata?.repo || 'repo'}-atjaunots.zip`;
+                a.download = `${repoName}-atjaunots.zip`;
                 a.click();
                 URL.revokeObjectURL(url);
                 
