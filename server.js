@@ -8,11 +8,10 @@ import crypto from 'crypto';
 import session from 'express-session';
 import { Readable } from 'stream';
 import { TurboFactory, EthereumSigner } from '@ardrive/turbo-sdk';
-import JSZip from 'jszip';
 
 import { checkAllServices } from './healthChecks.js';
 import { submitBackupWithMerkle } from './merkle.js';
-import { initRedis, getUserCredits, setUserCredits, getUserDeposits, setUserDeposits, getRedis } from './accounting-redis.js';
+import { initRedis, getUserCredits, setUserCredits, getRedis } from './accounting-redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -137,9 +136,6 @@ async function getWincForBytes(turbo, byteSizes) {
         return { totalWinc: 0n, perFileWinc: [] };
     }
     
-    logSection('⚡ TURBO getUploadCosts');
-    logInfo('Failu izmēri', byteSizes.join(', ') + ' bytes');
-    
     const costs = await turbo.getUploadCosts({ bytes: byteSizes });
     
     let totalWinc = 0n;
@@ -149,11 +145,7 @@ async function getWincForBytes(turbo, byteSizes) {
         const winc = BigInt(String(costs[i]?.winc || '0'));
         perFileWinc.push(winc);
         totalWinc += winc;
-        logInfo(`Fails #${i + 1}`, `${byteSizes[i]} bytes → ${winc} winc`);
     }
-    
-    logInfo('Kopējais Winc', totalWinc.toString());
-    logInfo('Bezmaksas', totalWinc === 0n ? '✅ JĀ' : '❌ NĒ');
     
     return { totalWinc, perFileWinc };
 }
@@ -161,32 +153,19 @@ async function getWincForBytes(turbo, byteSizes) {
 async function getEthForBytes(turbo, totalBytes) {
     if (totalBytes <= 0) return '0';
     
-    logSection('💰 TURBO IZMAKSU APRĒĶINS');
-    logInfo('Izmērs', totalBytes + ' bytes');
-    
     try {
         const { totalWinc } = await getWincForBytes(turbo, [totalBytes]);
-        if (totalWinc === 0n) {
-            logSuccess('Bezmaksas augšupielāde!');
-            return '0';
-        }
+        if (totalWinc === 0n) return '0';
     } catch (e) {
         logWarning('getUploadCosts kļūda: ' + errorMessage(e));
     }
     
     const { tokenPrice } = await turbo.getTokenPriceForBytes({ byteCount: totalBytes });
-    const costEth = String(tokenPrice);
-    
-    logInfo('ETH cena', costEth + ' ETH');
-    logInfo('Wei cena', ethers.parseEther(costEth).toString() + ' wei');
-    
-    return costEth;
+    return String(tokenPrice);
 }
 
 async function getTurboPaymentAddress() {
     try {
-        logInfo('Payment API', TURBO_PAYMENT_URL + '/v1/info');
-        
         const response = await fetch(`${TURBO_PAYMENT_URL}/v1/info`);
         
         if (!response.ok) {
@@ -212,29 +191,14 @@ async function getTurboPaymentAddress() {
             throw new Error('Nevar atrast adresi tokenam: ' + TURBO_TOKEN);
         }
         
-        logSuccess('Turbo payment adrese: ' + turboAddress);
         return turboAddress;
     } catch (error) {
-        logError('Neizdevās iegūt Turbo adresi: ' + errorMessage(error));
         throw error;
     }
 }
 
-app.get('/api/config', (req, res) => {
-    res.json({
-        chainId: CHAIN_ID,
-        nftAddress: NFT_ADDRESS,
-        subscriptionAddress: SUBSCRIPTION_ADDRESS,
-        treasuryAddress: TREASURY_ADDRESS,
-        usdcAddress: USDC_ADDRESS,
-        rpcUrl: RPC_URL,
-        arweaveGateway: ARWEAVE_GATEWAY,
-        turboToken: TURBO_TOKEN
-    });
-});
-
 // ==================================================
-// GITHUB OAUTH
+// GITHUB OAUTH (nemainīts)
 // ==================================================
 
 app.get('/api/github/login', (req, res) => {
@@ -304,8 +268,21 @@ app.get('/api/github/repos', async (req, res) => {
     }
 });
 
+app.get('/api/config', (req, res) => {
+    res.json({
+        chainId: CHAIN_ID,
+        nftAddress: NFT_ADDRESS,
+        subscriptionAddress: SUBSCRIPTION_ADDRESS,
+        treasuryAddress: TREASURY_ADDRESS,
+        usdcAddress: USDC_ADDRESS,
+        rpcUrl: RPC_URL,
+        arweaveGateway: ARWEAVE_GATEWAY,
+        turboToken: TURBO_TOKEN
+    });
+});
+
 // ==================================================
-// ABONEMENTA PĀRBAUDE
+// SUBSCRIPTION
 // ==================================================
 
 app.get('/api/subscription/status', async (req, res) => {
@@ -329,49 +306,6 @@ app.get('/api/subscription/status', async (req, res) => {
             remainingTime: remainingTime.toString(),
             price: price.toString(),
             githubUser
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, error: errorMessage(error) });
-    }
-});
-
-// ==================================================
-// NFT STATUS PĀRBAUDE
-// ==================================================
-
-app.post('/api/check-nft-status', async (req, res) => {
-    try {
-        const { repoName } = req.body;
-        const githubUser = req.session.githubUser;
-        
-        if (!repoName) return res.status(400).json({ success: false, error: 'Nav repo nosaukuma' });
-        if (!githubUser) return res.status(401).json({ success: false, error: 'Nav GitHub autorizācijas' });
-        
-        const fullRepoName = `${githubUser}/${repoName}`;
-        
-        const provider = getProvider();
-        const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
-        
-        const repoHash = getRepositoryHash(fullRepoName);
-        const tokenId = await nftContract.repositoryTokens(repoHash);
-        
-        if (tokenId === 0n) {
-            return res.json({ success: true, hasNFT: false, tokenId: '0' });
-        }
-        
-        const owner = await nftContract.ownerOf(tokenId);
-        const backupCount = await nftContract.getBackupCount(tokenId);
-        const lastManifestURI = await nftContract.getManifestURI(tokenId);
-        const lastMerkleRoot = await nftContract.getLastMerkleRoot(tokenId);
-        
-        res.json({
-            success: true,
-            hasNFT: true,
-            tokenId: tokenId.toString(),
-            owner,
-            backupCount: backupCount.toString(),
-            lastManifestURI,
-            lastMerkleRoot
         });
     } catch (error) {
         res.status(500).json({ success: false, error: errorMessage(error) });
@@ -440,469 +374,4 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 app.post('/api/prepare-backup', async (req, res) => {
     try {
         const { repoName, walletAddress } = req.body;
-        const githubToken = req.session.githubToken;
-        const githubUser = req.session.githubUser;
-        
-        logSection('📥 PREPARE BACKUP');
-        logInfo('Repo', repoName);
-        logInfo('GitHub User', githubUser);
-        logInfo('Wallet', walletAddress);
-        
-        if (HEALTH_CHECKS_ENABLED) {
-            logSection('🩺 KRITISKO SERVISU KOMBINĒTĀ PĀRBAUDE');
-            
-            const healthParams = {
-                redis: getRedis(),
-                rpcUrl: RPC_URL,
-                operatorPrivateKey: OPERATOR_PRIVATE_KEY,
-                nftAddress: NFT_ADDRESS,
-                subscriptionAddress: SUBSCRIPTION_ADDRESS
-            };
-            
-            const health = await checkAllServices(healthParams);
-            
-            if (!health.allHealthy) {
-                logError('❌ Servisi nav pieejami! Process tiek BLOĶĒTS!');
-                return res.status(503).json({
-                    success: false,
-                    error: 'Servisi nav pieejami. Lūdzu mēģini vēlreiz vēlāk.',
-                    health
-                });
-            }
-            
-            logSuccess('✅ Visi servisi ir pieejami!');
-        }
-        
-        if (!repoName) return res.status(400).json({ success: false, error: 'Nav repo nosaukuma' });
-        if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav maka adreses' });
-        if (!githubToken) return res.status(401).json({ success: false, error: 'Nav GitHub autorizācijas' });
-        if (!githubUser) return res.status(401).json({ success: false, error: 'Nav GitHub lietotāja' });
-        
-        const fullRepoName = `${githubUser}/${repoName}`;
-        logInfo('Pilnais repo', fullRepoName);
-        
-        const provider = getProvider();
-        
-        // 1. Pārbauda abonementu
-        logSection('📅 ABONEMENTA PĀRBAUDE');
-        const subscriptionContract = new ethers.Contract(SUBSCRIPTION_ADDRESS, SUBSCRIPTION_ABI, provider);
-        const githubHash = getGithubHash(githubUser);
-        const isSubscribed = await subscriptionContract.isSubscribed(githubHash);
-        
-        if (!isSubscribed) {
-            logError('Abonements nav aktīvs');
-            return res.status(403).json({ success: false, error: 'Abonements nav aktīvs' });
-        }
-        logSuccess('Abonements aktīvs');
-        
-        // 2. Pārbauda NFT
-        logSection('🔍 NFT PĀRBAUDE');
-        const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
-        const repoHash = getRepositoryHash(fullRepoName);
-        const tokenId = await nftContract.repositoryTokens(repoHash);
-        
-        if (tokenId === 0n) {
-            logError('Nav NFT šim repo');
-            return res.status(400).json({ success: false, error: 'Nav NFT šim repo' });
-        }
-        logInfo('Token ID', tokenId.toString());
-        
-        const nftOwner = await nftContract.ownerOf(tokenId);
-        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) {
-            logError('NFT nepieder šim makam');
-            return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
-        }
-        logSuccess('NFT īpašnieks OK');
-        
-        // 3. Iegūst failus
-        logSection('🌐 GITHUB FAILI');
-        const currentFiles = await getRepoFiles(githubToken, githubUser, repoName);
-        
-        if (currentFiles.length === 0) {
-            logError('Nav failu repo');
-            return res.status(400).json({ success: false, error: 'Nav failu repo' });
-        }
-        logInfo('Kopā faili', currentFiles.length);
-        
-        const totalFileBytes = currentFiles.reduce((sum, file) => sum + file.size, 0);
-        
-        // 4. Aprēķina Turbo izmaksas
-        logSection('⚡ TURBO IZMAKSAS');
-        const turbo = getTurbo();
-        const estimatedZipSize = Math.ceil(totalFileBytes * 1.1);
-        const { totalWinc: fileWinc } = await getWincForBytes(turbo, [estimatedZipSize]);
-        
-        const userCredits = await getUserCredits(walletAddress);
-        logInfo('Lietotāja kredīti', userCredits.toString() + ' winc');
-        
-        let fileCostEth;
-        let newUserCredits;
-        
-        if (userCredits >= fileWinc) {
-            newUserCredits = userCredits - fileWinc;
-            fileCostEth = '0';
-            logSuccess('Pietiek kredītu!');
-            logInfo('Atlikums', newUserCredits.toString() + ' winc');
-        } else {
-            const deficitWinc = fileWinc - userCredits;
-            logInfo('Deficīts', deficitWinc.toString() + ' winc');
-            
-            fileCostEth = await getEthForBytes(turbo, estimatedZipSize);
-            newUserCredits = 0n;
-            logInfo('Jāmaksā', fileCostEth + ' ETH');
-        }
-        
-        // 5. Pārbauda Treasury bilanci
-        logSection('🏦 TREASURY');
-        let treasuryBalance = 0n;
-        if (TREASURY_ADDRESS) {
-            const treasuryContract = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, provider);
-            treasuryBalance = await treasuryContract.balance();
-        }
-        logInfo('Bilance', ethers.formatEther(treasuryBalance) + ' ETH');
-        
-        const fileCostWei = ethers.parseEther(fileCostEth);
-        const hasEnoughTreasury = fileCostWei === 0n ? true : treasuryBalance >= fileCostWei;
-        logInfo('Pietiekami', hasEnoughTreasury ? '✅ JĀ' : '❌ NĒ');
-        
-        res.json({
-            success: true,
-            repoName: fullRepoName,
-            tokenId: tokenId.toString(),
-            files: currentFiles,
-            fileCount: currentFiles.length,
-            totalBytes: totalFileBytes,
-            estimatedZipSize,
-            fileWinc: fileWinc.toString(),
-            fileCostEth,
-            userCredits: userCredits.toString(),
-            newUserCredits: newUserCredits.toString(),
-            treasuryBalance: treasuryBalance.toString(),
-            hasEnoughTreasury,
-            backupCount: Number(await nftContract.getBackupCount(tokenId))
-        });
-    } catch (error) {
-        logSection('❌ BACKUP PREPARE ERROR');
-        logError(errorMessage(error));
-        console.error(error);
-        return res.status(500).json({ success: false, error: errorMessage(error) });
-    }
-});
-
-// ==================================================
-// EXECUTE BACKUP
-// ==================================================
-
-app.post('/api/execute-backup', async (req, res) => {
-    try {
-        const { repoName, files, tokenId, fileCostEth, walletAddress, newUserCredits } = req.body;
-        
-        logSection('📤 EXECUTE BACKUP');
-        logInfo('Repo', repoName);
-        logInfo('Mainītie faili', files.length);
-        logInfo('Token ID', tokenId);
-        logInfo('Failu izmaksas', fileCostEth + ' ETH');
-        logInfo('Wallet', walletAddress);
-        
-        if (!repoName) return res.status(400).json({ success: false, error: 'Nav repoName' });
-        if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav walletAddress' });
-        if (!Array.isArray(files)) return res.status(400).json({ success: false, error: 'files nav masīvs' });
-        if (!tokenId) return res.status(400).json({ success: false, error: 'Nav tokenId' });
-        if (fileCostEth === undefined) return res.status(400).json({ success: false, error: 'Nav fileCostEth' });
-        
-        const provider = getProvider();
-        const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
-        
-        const nftOwner = await nftContract.ownerOf(tokenId);
-        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) {
-            return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
-        }
-        
-        const turbo = getTurbo();
-        
-        // 1. ZIP ARHĪVA IZVEIDE
-        logSection('📦 ZIP ARHĪVA IZVEIDE');
-        const zip = new JSZip();
-        
-        for (const file of files) {
-            const fileBuffer = Buffer.from(file.content, 'base64');
-            zip.file(file.path, fileBuffer);
-            logInfo(`Pievienots: ${file.path}`, fileBuffer.length + ' bytes');
-        }
-        
-        const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-        logInfo('ZIP izmērs', zipBuffer.length + ' bytes');
-        
-        // 2. ZIP APMAKSA
-        const fileCostWei = ethers.parseEther(fileCostEth);
-        
-        logSection('💳 ZIP APMAKSA');
-        if (fileCostWei > 0n) {
-            logInfo('Summa', fileCostEth + ' ETH');
-            logInfo('Wei', fileCostWei.toString());
-            
-            const turboAddress = await getTurboPaymentAddress();
-            logInfo('Turbo adrese', turboAddress);
-            
-            const operatorWallet = getOperatorWallet(provider);
-            logInfo('Operatora adrese', operatorWallet.address);
-            
-            const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
-            
-            // ==================================================
-            // PĀRBAUDE: VAI OPERATORS IR ATĻAUTS
-            // ==================================================
-            const treasuryRead = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, provider);
-            const isOp = await treasuryRead.isOperator(operatorWallet.address);
-            logInfo('isOperator rezultāts', isOp);
-            
-            if (!isOp) {
-                logError('Operators nav atļauts Treasury līgumā');
-                return res.status(500).json({ success: false, error: 'Operators nav atļauts Treasury līgumā' });
-            }
-            
-            const operatorAddress = await treasuryRead.operator();
-            logInfo('Treasury operators', operatorAddress);
-            logInfo('Servera operators', operatorWallet.address);
-            // ==================================================
-            
-            const filePaymentId = ethers.id(repoName + '-zip-' + Date.now().toString());
-            const filePayTx = await treasuryWrite.payTurbo(fileCostWei, filePaymentId, turboAddress);
-            await filePayTx.wait();
-            
-            logSuccess('Transakcija: ' + filePayTx.hash);
-            logInfo('Payment ID', filePaymentId);
-            logInfo('Destination', turboAddress);
-            
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            logSuccess('Gaidīšana pabeigta (5s)');
-        } else {
-            logSuccess('Izmanto lietotāja kredītus!');
-        }
-        
-        // 3. ZIP AUGŠUPIELĀDE
-        logSection('📤 ZIP AUGŠUPIELĀDE');
-        const startUpload = Date.now();
-        const zipResult = await turbo.uploadFile({
-            fileStreamFactory: () => Readable.from(zipBuffer),
-            fileSizeFactory: () => zipBuffer.length,
-            dataItemOpts: {
-                tags: [
-                    { name: 'App-Name', value: 'PermRepo' },
-                    { name: 'Repo', value: repoName },
-                    { name: 'Type', value: 'backup-archive' },
-                    { name: 'Content-Type', value: 'application/zip' },
-                    { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
-                ]
-            }
-        });
-        const uploadElapsed = Date.now() - startUpload;
-        
-        logSuccess(`ZIP TX ID: ${zipResult.id} (${uploadElapsed}ms)`);
-        
-        // 4. ATJAUNINA LIETOTĀJA KREDĪTUS
-        logSection('💾 KREDĪTU ATJAUNINĀŠANA');
-        await setUserCredits(walletAddress, BigInt(newUserCredits || '0'));
-        logSuccess('Lietotāja kredīti atjaunināti');
-        
-        // 5. MANIFESTA SAGATAVOŠANA
-        logSection('📄 MANIFESTA SAGATAVOŠANA');
-        
-        const backupCount = Number(await nftContract.getBackupCount(tokenId));
-        const newBackupNumber = backupCount + 1;
-        
-        const manifest = {
-            metadata: {
-                repo: repoName,
-                backupNumber: newBackupNumber,
-                timestamp: new Date().toISOString(),
-                generatedBy: 'PermRepo v1.0.0'
-            },
-            manifest: 'arweave/paths',
-            version: '0.2.0',
-            archive: {
-                id: zipResult.id,
-                url: `${ARWEAVE_GATEWAY}/raw/${zipResult.id}`
-            },
-            paths: {}
-        };
-        
-        for (const file of files) {
-            manifest.paths[file.path] = {
-                zipId: zipResult.id,
-                hash: file.hash
-            };
-        }
-        
-        const manifestBuffer = Buffer.from(JSON.stringify(manifest), 'utf8');
-        const manifestSize = manifestBuffer.length;
-        logInfo('Manifesta izmērs', manifestSize + ' bytes');
-        
-        // 6. MANIFESTA APMAKSA
-        const { totalWinc: manifestWinc } = await getWincForBytes(turbo, [manifestSize]);
-        
-        const currentUserCredits = await getUserCredits(walletAddress);
-        let manifestCostEth;
-        let newManifestCredits;
-        
-        if (currentUserCredits >= manifestWinc) {
-            newManifestCredits = currentUserCredits - manifestWinc;
-            manifestCostEth = '0';
-            logSuccess('Manifestam pietiek kredītu!');
-        } else {
-            const manifestDeficit = manifestWinc - currentUserCredits;
-            logInfo('Manifesta deficīts', manifestDeficit.toString() + ' winc');
-            manifestCostEth = await getEthForBytes(turbo, manifestSize);
-            newManifestCredits = 0n;
-        }
-        
-        logInfo('Manifesta Winc', manifestWinc.toString());
-        logInfo('Manifesta ETH', manifestCostEth + ' ETH');
-        
-        logSection('💳 MANIFESTA APMAKSA');
-        if (ethers.parseEther(manifestCostEth) > 0n) {
-            logInfo('Summa', manifestCostEth + ' ETH');
-            
-            const turboAddress = await getTurboPaymentAddress();
-            const operatorWallet = getOperatorWallet(provider);
-            const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
-            const manifestPaymentId = ethers.id(repoName + '-manifest-' + Date.now().toString());
-            const manifestPayTx = await treasuryWrite.payTurbo(ethers.parseEther(manifestCostEth), manifestPaymentId, turboAddress);
-            await manifestPayTx.wait();
-            
-            logSuccess('Transakcija: ' + manifestPayTx.hash);
-            logInfo('Payment ID', manifestPaymentId);
-            
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            logSuccess('Gaidīšana pabeigta (5s)');
-        } else {
-            logSuccess('Manifests izmanto kredītus!');
-        }
-        
-        // 7. MANIFESTA AUGŠUPIELĀDE
-        logSection('📤 MANIFESTA AUGŠUPIELĀDE');
-        const startManifestUpload = Date.now();
-        const manifestResult = await turbo.uploadFile({
-            fileStreamFactory: () => Readable.from(manifestBuffer),
-            fileSizeFactory: () => manifestBuffer.length,
-            dataItemOpts: {
-                tags: [
-                    { name: 'App-Name', value: 'PermRepo' },
-                    { name: 'Type', value: 'path-manifest' },
-                    { name: 'Repo', value: repoName },
-                    { name: 'Content-Type', value: 'application/x.arweave-manifest+json' },
-                    { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
-                ]
-            }
-        });
-        const manifestUploadElapsed = Date.now() - startManifestUpload;
-        
-        logSuccess(`MANIFEST TX ID: ${manifestResult.id} (${manifestUploadElapsed}ms)`);
-        
-        // 8. ATJAUNINA LIETOTĀJA KREDĪTUS (pēc manifesta)
-        logSection('💾 KREDĪTU ATJAUNINĀŠANA (MANIFESTS)');
-        await setUserCredits(walletAddress, BigInt(newManifestCredits || '0'));
-        logSuccess('Lietotāja kredīti atjaunināti');
-        
-        res.json({
-            success: true,
-            zipTxId: zipResult.id,
-            manifestTxId: manifestResult.id,
-            manifest,
-            backupNumber: newBackupNumber,
-            fileCostEth,
-            manifestCostEth,
-            uploadElapsed,
-            manifestUploadElapsed,
-            newManifestCredits: newManifestCredits.toString()
-        });
-    } catch (error) {
-        logSection('❌ BACKUP EXECUTE ERROR');
-        logError(errorMessage(error));
-        console.error(error);
-        return res.status(500).json({ success: false, error: errorMessage(error) });
-    }
-});
-
-// ==================================================
-// FINALIZE BACKUP
-// ==================================================
-
-app.post('/api/finalize-backup', async (req, res) => {
-    try {
-        const { tokenId, manifestTxId, files, deadline, signature } = req.body;
-        
-        if (!tokenId) return res.status(400).json({ success: false, error: 'Nav tokenId' });
-        if (!manifestTxId) return res.status(400).json({ success: false, error: 'Nav manifestTxId' });
-        if (!signature) return res.status(400).json({ success: false, error: 'Nav signature' });
-        
-        const provider = getProvider();
-        const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
-        
-        const merkleTxHash = await submitBackupWithMerkle({
-            tokenId,
-            manifestTxId,
-            files: files || [],
-            deadline,
-            signature,
-            nftContract: new ethers.Contract(NFT_ADDRESS, NFT_ABI, getOperatorWallet(provider)),
-            readContract: nftContract
-        });
-        
-        logSuccess('Merkle sakne iesniegta!');
-        logInfo('Transakcija', merkleTxHash);
-        
-        res.json({ success: true, merkleTxHash });
-    } catch (error) {
-        logError('Sign kļūda: ' + errorMessage(error));
-        res.status(500).json({ success: false, error: errorMessage(error) });
-    }
-});
-
-// ==================================================
-// HEALTH
-// ==================================================
-
-app.get('/api/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        configured: {
-            rpc: !!RPC_URL,
-            operatorKey: !!OPERATOR_PRIVATE_KEY,
-            treasury: !!TREASURY_ADDRESS,
-            nft: !!NFT_ADDRESS,
-            subscription: !!SUBSCRIPTION_ADDRESS,
-            usdc: !!USDC_ADDRESS,
-            githubOAuth: !!(GITHUB_CLIENT_ID && GITHUB_CLIENT_SECRET && GITHUB_REDIRECT_URI),
-            redis: !!getRedis()
-        }
-    });
-});
-
-// ==================================================
-// FRONTEND FALLBACK
-// ==================================================
-
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// ==================================================
-// START
-// ==================================================
-
-app.listen(PORT, () => {
-    logSection('🚀 PERMAREPO SERVERIS');
-    logInfo('Ports', PORT);
-    logInfo('RPC_URL', RPC_URL ? '✅ IR' : '❌ NAV');
-    logInfo('OPERATOR_PRIVATE_KEY', OPERATOR_PRIVATE_KEY ? '✅ IR' : '❌ NAV');
-    logInfo('TREASURY_ADDRESS', TREASURY_ADDRESS || '❌ NAV');
-    logInfo('NFT_ADDRESS', NFT_ADDRESS || '❌ NAV');
-    logInfo('SUBSCRIPTION_ADDRESS', SUBSCRIPTION_ADDRESS || '❌ NAV');
-    logInfo('USDC_ADDRESS', USDC_ADDRESS || '❌ NAV');
-    logInfo('TURBO_TOKEN', TURBO_TOKEN);
-    logInfo('TURBO_UPLOAD_URL', TURBO_UPLOAD_URL);
-    logInfo('TURBO_PAYMENT_URL', TURBO_PAYMENT_URL);
-    logInfo('REDIS', getRedis() ? '✅ IR' : '❌ NAV');
-    console.log('='.repeat(60) + '\n');
-});
+        const githubToken = req.session
