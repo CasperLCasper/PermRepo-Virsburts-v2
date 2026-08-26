@@ -8,51 +8,37 @@
 </head>
 <body>
 <div class="container">
-    <h1>🔒 PermRepo Backups</h1>
-    <p class="subtitle">Izvēlies repozitoriju un sāc backupu uz Arweave</p>
+    <h1>📦 PermRepo Backups</h1>
+    <p class="subtitle" id="repoTitle">Repozitorijs: -</p>
     
-    <div id="authSection" style="display: none;">
-        <button id="loginButton" class="sign-button">Savienot ar GitHub</button>
+    <div class="info-row text-left">
+        <span class="info-label">NFT Token ID</span>
+        <span class="info-value" id="nftTokenId">-</span>
     </div>
     
-    <div id="userSection" style="display: none;">
-        <div class="info-row text-left">
-            <span class="info-label">Lietotājs</span>
-            <span class="info-value" id="userName">-</span>
-        </div>
-        <button id="logoutButton" class="logout-button">Izrakstīties</button>
+    <div class="info-row text-left">
+        <span class="info-label">Backupu skaits</span>
+        <span class="info-value" id="backupCount">-</span>
     </div>
     
-    <div id="repoSection" style="display: none;">
-        <div class="info-row text-left">
-            <span class="info-label">Repozitorijs</span>
-            <select id="repoSelect">
-                <option value="">Ielādē...</option>
-            </select>
-        </div>
+    <div class="info-row text-left">
+        <span class="info-label">Pēdējais manifests</span>
+        <span class="info-value" id="lastManifest">-</span>
     </div>
     
-    <div id="walletSection" style="display: none;">
-        <div class="info-row text-left">
-            <span class="info-label">Maka adrese</span>
-            <input type="text" id="walletInput" placeholder="0x..." readonly>
-        </div>
-        <button id="connectWalletButton" class="sign-button">Savienot maku</button>
+    <div class="info-row text-left">
+        <span class="info-label">Pēdējā Merkle sakne</span>
+        <span class="info-value" id="lastMerkleRoot">-</span>
     </div>
     
-    <div id="statusSection" style="display: none;">
-        <div class="status" id="nftStatus"></div>
-        <div class="status" id="subscriptionStatus"></div>
-    </div>
-    
-    <button id="backupButton" class="sign-button" style="display: none;" disabled>
-        Sākt backupu
-    </button>
+    <button id="startBackupButton" class="sign-button" disabled>Sākt backupu</button>
     
     <div class="status" id="status"></div>
     <div class="error" id="error"></div>
 </div>
+
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
-<script type="module" src="js/backup-src.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module" src="js/backup.js"></script>
 </body>
 </html>
