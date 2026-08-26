@@ -319,13 +319,17 @@ app.get('/api/subscription/status', async (req, res) => {
 app.post('/api/check-nft-status', async (req, res) => {
     try {
         const { repoName } = req.body;
+        const githubUser = req.session.githubUser;
         
         if (!repoName) return res.status(400).json({ success: false, error: 'Nav repo nosaukuma' });
+        if (!githubUser) return res.status(401).json({ success: false, error: 'Nav GitHub autorizācijas' });
+        
+        const fullRepoName = `${githubUser}/${repoName}`;
         
         const provider = getProvider();
         const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
         
-        const repoHash = getRepositoryHash(repoName);
+        const repoHash = getRepositoryHash(fullRepoName);
         const tokenId = await nftContract.repositoryTokens(repoHash);
         
         if (tokenId === 0n) {
@@ -356,6 +360,10 @@ app.post('/api/check-nft-status', async (req, res) => {
 // ==================================================
 
 async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
+    if (!owner || !repo) {
+        throw new Error('Nederīgs owner vai repo');
+    }
+    
     const files = [];
     const encodedPath = repoPath ? repoPath.split('/').map(part => encodeURIComponent(part)).join('/') : '';
     const url = encodedPath
@@ -370,7 +378,10 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
         }
     });
     
-    if (!response.ok) throw new Error(`GitHub API kļūda: ${response.status}`);
+    if (!response.ok) {
+        throw new Error(`GitHub API kļūda: ${response.status} (${url})`);
+    }
+    
     const contents = await response.json();
     if (!Array.isArray(contents)) return files;
     
@@ -411,6 +422,7 @@ app.post('/api/prepare-backup', async (req, res) => {
         
         logSection('📥 PREPARE BACKUP');
         logInfo('Repo', repoName);
+        logInfo('GitHub User', githubUser);
         logInfo('Wallet', walletAddress);
         
         if (HEALTH_CHECKS_ENABLED) {
@@ -443,6 +455,10 @@ app.post('/api/prepare-backup', async (req, res) => {
         if (!githubToken) return res.status(401).json({ success: false, error: 'Nav GitHub autorizācijas' });
         if (!githubUser) return res.status(401).json({ success: false, error: 'Nav GitHub lietotāja' });
         
+        // PILNAIS REPO NOSAUKUMS: owner/repo
+        const fullRepoName = `${githubUser}/${repoName}`;
+        logInfo('Pilnais repo', fullRepoName);
+        
         const provider = getProvider();
         
         // 1. Pārbauda abonementu
@@ -460,7 +476,7 @@ app.post('/api/prepare-backup', async (req, res) => {
         // 2. Pārbauda NFT
         logSection('🔍 NFT PĀRBAUDE');
         const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
-        const repoHash = getRepositoryHash(repoName);
+        const repoHash = getRepositoryHash(fullRepoName);
         const tokenId = await nftContract.repositoryTokens(repoHash);
         
         if (tokenId === 0n) {
@@ -478,8 +494,7 @@ app.post('/api/prepare-backup', async (req, res) => {
         
         // 3. Iegūst failus
         logSection('🌐 GITHUB FAILI');
-        const repoParts = repoName.split('/');
-        const currentFiles = await getRepoFiles(githubToken, repoParts[0], repoParts[1]);
+        const currentFiles = await getRepoFiles(githubToken, githubUser, repoName);
         
         if (currentFiles.length === 0) {
             logError('Nav failu repo');
@@ -513,7 +528,7 @@ app.post('/api/prepare-backup', async (req, res) => {
         
         res.json({
             success: true,
-            repoName,
+            repoName: fullRepoName,
             tokenId: tokenId.toString(),
             files: currentFiles,
             fileCount: currentFiles.length,
