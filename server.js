@@ -12,7 +12,7 @@ import JSZip from 'jszip';
 
 import { checkAllServices } from './healthChecks.js';
 import { submitBackupWithMerkle } from './merkle.js';
-import { initRedis, getRedis } from './accounting-redis.js';
+import { initRedis, getUserCredits, setUserCredits, getUserDeposits, setUserDeposits, getRedis } from './accounting-redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -135,6 +135,9 @@ async function getWincForBytes(turbo, byteSizes) {
         return { totalWinc: 0n, perFileWinc: [] };
     }
     
+    logSection('⚡ TURBO getUploadCosts');
+    logInfo('Failu izmēri', byteSizes.join(', ') + ' bytes');
+    
     const costs = await turbo.getUploadCosts({ bytes: byteSizes });
     
     let totalWinc = 0n;
@@ -144,7 +147,11 @@ async function getWincForBytes(turbo, byteSizes) {
         const winc = BigInt(String(costs[i]?.winc || '0'));
         perFileWinc.push(winc);
         totalWinc += winc;
+        logInfo(`Fails #${i + 1}`, `${byteSizes[i]} bytes → ${winc} winc`);
     }
+    
+    logInfo('Kopējais Winc', totalWinc.toString());
+    logInfo('Bezmaksas', totalWinc === 0n ? '✅ JĀ' : '❌ NĒ');
     
     return { totalWinc, perFileWinc };
 }
@@ -152,19 +159,32 @@ async function getWincForBytes(turbo, byteSizes) {
 async function getEthForBytes(turbo, totalBytes) {
     if (totalBytes <= 0) return '0';
     
+    logSection('💰 TURBO IZMAKSU APRĒĶINS');
+    logInfo('Izmērs', totalBytes + ' bytes');
+    
     try {
         const { totalWinc } = await getWincForBytes(turbo, [totalBytes]);
-        if (totalWinc === 0n) return '0';
+        if (totalWinc === 0n) {
+            logSuccess('Bezmaksas augšupielāde!');
+            return '0';
+        }
     } catch (e) {
         logWarning('getUploadCosts kļūda: ' + errorMessage(e));
     }
     
     const { tokenPrice } = await turbo.getTokenPriceForBytes({ byteCount: totalBytes });
-    return String(tokenPrice);
+    const costEth = String(tokenPrice);
+    
+    logInfo('ETH cena', costEth + ' ETH');
+    logInfo('Wei cena', ethers.parseEther(costEth).toString() + ' wei');
+    
+    return costEth;
 }
 
 async function getTurboPaymentAddress() {
     try {
+        logInfo('Payment API', TURBO_PAYMENT_URL + '/v1/info');
+        
         const response = await fetch(`${TURBO_PAYMENT_URL}/v1/info`);
         
         if (!response.ok) {
@@ -190,6 +210,7 @@ async function getTurboPaymentAddress() {
             throw new Error('Nevar atrast adresi tokenam: ' + TURBO_TOKEN);
         }
         
+        logSuccess('Turbo payment adrese: ' + turboAddress);
         return turboAddress;
     } catch (error) {
         logError('Neizdevās iegūt Turbo adresi: ' + errorMessage(error));
@@ -455,7 +476,6 @@ app.post('/api/prepare-backup', async (req, res) => {
         if (!githubToken) return res.status(401).json({ success: false, error: 'Nav GitHub autorizācijas' });
         if (!githubUser) return res.status(401).json({ success: false, error: 'Nav GitHub lietotāja' });
         
-        // PILNAIS REPO NOSAUKUMS: owner/repo
         const fullRepoName = `${githubUser}/${repoName}`;
         logInfo('Pilnais repo', fullRepoName);
         
@@ -508,10 +528,27 @@ app.post('/api/prepare-backup', async (req, res) => {
         logSection('⚡ TURBO IZMAKSAS');
         const turbo = getTurbo();
         const estimatedZipSize = Math.ceil(totalFileBytes * 1.1);
-        const fileCostEth = await getEthForBytes(turbo, estimatedZipSize);
+        const { totalWinc: fileWinc } = await getWincForBytes(turbo, [estimatedZipSize]);
         
-        logInfo('ZIP izmērs (aptuveni)', estimatedZipSize + ' bytes');
-        logInfo('Failu izmaksas', fileCostEth + ' ETH');
+        const userCredits = await getUserCredits(walletAddress);
+        logInfo('Lietotāja kredīti', userCredits.toString() + ' winc');
+        
+        let fileCostEth;
+        let newUserCredits;
+        
+        if (userCredits >= fileWinc) {
+            newUserCredits = userCredits - fileWinc;
+            fileCostEth = '0';
+            logSuccess('Pietiek kredītu!');
+            logInfo('Atlikums', newUserCredits.toString() + ' winc');
+        } else {
+            const deficitWinc = fileWinc - userCredits;
+            logInfo('Deficīts', deficitWinc.toString() + ' winc');
+            
+            fileCostEth = await getEthForBytes(turbo, estimatedZipSize);
+            newUserCredits = 0n;
+            logInfo('Jāmaksā', fileCostEth + ' ETH');
+        }
         
         // 5. Pārbauda Treasury bilanci
         logSection('🏦 TREASURY');
@@ -534,7 +571,10 @@ app.post('/api/prepare-backup', async (req, res) => {
             fileCount: currentFiles.length,
             totalBytes: totalFileBytes,
             estimatedZipSize,
+            fileWinc: fileWinc.toString(),
             fileCostEth,
+            userCredits: userCredits.toString(),
+            newUserCredits: newUserCredits.toString(),
             treasuryBalance: treasuryBalance.toString(),
             hasEnoughTreasury,
             backupCount: Number(await nftContract.getBackupCount(tokenId))
@@ -553,7 +593,7 @@ app.post('/api/prepare-backup', async (req, res) => {
 
 app.post('/api/execute-backup', async (req, res) => {
     try {
-        const { repoName, files, tokenId, fileCostEth, walletAddress } = req.body;
+        const { repoName, files, tokenId, fileCostEth, walletAddress, newUserCredits } = req.body;
         
         logSection('📤 EXECUTE BACKUP');
         logInfo('Repo', repoName);
@@ -617,7 +657,7 @@ app.post('/api/execute-backup', async (req, res) => {
             await new Promise(resolve => setTimeout(resolve, 5000));
             logSuccess('Gaidīšana pabeigta (5s)');
         } else {
-            logSuccess('Bezmaksas augšupielāde!');
+            logSuccess('Izmanto lietotāja kredītus!');
         }
         
         // 3. ZIP AUGŠUPIELĀDE
@@ -640,7 +680,12 @@ app.post('/api/execute-backup', async (req, res) => {
         
         logSuccess(`ZIP TX ID: ${zipResult.id} (${uploadElapsed}ms)`);
         
-        // 4. MANIFESTA SAGATAVOŠANA
+        // 4. ATJAUNINA LIETOTĀJA KREDĪTUS
+        logSection('💾 KREDĪTU ATJAUNINĀŠANA');
+        await setUserCredits(walletAddress, BigInt(newUserCredits || '0'));
+        logSuccess('Lietotāja kredīti atjaunināti');
+        
+        // 5. MANIFESTA SAGATAVOŠANA
         logSection('📄 MANIFESTA SAGATAVOŠANA');
         
         const backupCount = Number(await nftContract.getBackupCount(tokenId));
@@ -673,9 +718,26 @@ app.post('/api/execute-backup', async (req, res) => {
         const manifestSize = manifestBuffer.length;
         logInfo('Manifesta izmērs', manifestSize + ' bytes');
         
-        // 5. MANIFESTA APMAKSA
+        // 6. MANIFESTA APMAKSA
         const { totalWinc: manifestWinc } = await getWincForBytes(turbo, [manifestSize]);
-        const manifestCostEth = await getEthForBytes(turbo, manifestSize);
+        
+        const currentUserCredits = await getUserCredits(walletAddress);
+        let manifestCostEth;
+        let newManifestCredits;
+        
+        if (currentUserCredits >= manifestWinc) {
+            newManifestCredits = currentUserCredits - manifestWinc;
+            manifestCostEth = '0';
+            logSuccess('Manifestam pietiek kredītu!');
+        } else {
+            const manifestDeficit = manifestWinc - currentUserCredits;
+            logInfo('Manifesta deficīts', manifestDeficit.toString() + ' winc');
+            manifestCostEth = await getEthForBytes(turbo, manifestSize);
+            newManifestCredits = 0n;
+        }
+        
+        logInfo('Manifesta Winc', manifestWinc.toString());
+        logInfo('Manifesta ETH', manifestCostEth + ' ETH');
         
         logSection('💳 MANIFESTA APMAKSA');
         if (ethers.parseEther(manifestCostEth) > 0n) {
@@ -694,10 +756,10 @@ app.post('/api/execute-backup', async (req, res) => {
             await new Promise(resolve => setTimeout(resolve, 5000));
             logSuccess('Gaidīšana pabeigta (5s)');
         } else {
-            logSuccess('Manifests bezmaksas!');
+            logSuccess('Manifests izmanto kredītus!');
         }
         
-        // 6. MANIFESTA AUGŠUPIELĀDE
+        // 7. MANIFESTA AUGŠUPIELĀDE
         logSection('📤 MANIFESTA AUGŠUPIELĀDE');
         const startManifestUpload = Date.now();
         const manifestResult = await turbo.uploadFile({
@@ -717,6 +779,11 @@ app.post('/api/execute-backup', async (req, res) => {
         
         logSuccess(`MANIFEST TX ID: ${manifestResult.id} (${manifestUploadElapsed}ms)`);
         
+        // 8. ATJAUNINA LIETOTĀJA KREDĪTUS (pēc manifesta)
+        logSection('💾 KREDĪTU ATJAUNINĀŠANA (MANIFESTS)');
+        await setUserCredits(walletAddress, BigInt(newManifestCredits || '0'));
+        logSuccess('Lietotāja kredīti atjaunināti');
+        
         res.json({
             success: true,
             zipTxId: zipResult.id,
@@ -726,7 +793,8 @@ app.post('/api/execute-backup', async (req, res) => {
             fileCostEth,
             manifestCostEth,
             uploadElapsed,
-            manifestUploadElapsed
+            manifestUploadElapsed,
+            newManifestCredits: newManifestCredits.toString()
         });
     } catch (error) {
         logSection('❌ BACKUP EXECUTE ERROR');
