@@ -11,6 +11,10 @@ let githubUser = null;
 let currentFileCostEth = '0';
 let currentNewUserCredits = '0';
 let currentNewManifestCredits = '0';
+let currentFileWinc = '0';
+let currentUserCredits = '0';
+let currentZipSize = 0;
+let currentFileCount = 0;
 
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
@@ -245,8 +249,15 @@ async function startBackup() {
         
         currentFileCostEth = prepareResult.fileCostEth || '0';
         currentNewUserCredits = prepareResult.newUserCredits || '0';
+        currentFileWinc = prepareResult.fileWinc || '0';
+        currentUserCredits = prepareResult.userCredits || '0';
+        currentZipSize = prepareResult.estimatedZipSize || 0;
+        currentFileCount = files.length;
         
-        setStatus(`Iegūti ${files.length} faili. Izveido ZIP...`);
+        // Parāda lietotājam informāciju
+        showBackupInfo(files, prepareResult);
+        
+        setStatus('Izveido ZIP...');
         button.textContent = '⏳ ZIP...';
         
         const zip = new JSZip();
@@ -286,6 +297,25 @@ async function startBackup() {
             const encrypted = await encryptData(zipBuffer, masterKey);
             encryptedZip = encrypted.encrypted;
             iv = encrypted.iv;
+        }
+        
+        // LIETOTĀJS IEMAKSĀ TREASURY (ja nepieciešams)
+        if (currentFileCostEth !== '0') {
+            const fileCostWei = ethers.parseEther(currentFileCostEth);
+            
+            setStatus(`Iemaksājam Treasury: ${currentFileCostEth} ETH...`);
+            button.textContent = '⏳ Iemaksa...';
+            
+            const tx = await signer.sendTransaction({
+                to: CONFIG.treasuryAddress,
+                value: fileCostWei
+            });
+            
+            setStatus('Gaida iemaksas apstiprinājumu...');
+            button.textContent = '⏳ Gaida...';
+            await tx.wait();
+            
+            setStatus('✅ Iemaksa veiksmīga!');
         }
         
         setStatus('Augšupielādē ZIP...');
@@ -391,6 +421,23 @@ async function startBackup() {
         button.disabled = false;
         button.textContent = 'Sākt backupu';
     }
+}
+
+function showBackupInfo(files, prepareResult) {
+    const infoHtml = `
+        <div style="margin: 16px 0; padding: 16px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;">
+            <h3 style="color: #79c0ff; margin-bottom: 8px;">📊 Backupa informācija</h3>
+            <div style="color: #b0b8c4; font-size: 14px;">
+                <div>📁 Failu skaits: ${files.length}</div>
+                <div>📦 ZIP izmērs (aptuveni): ${(prepareResult.estimatedZipSize / 1024 / 1024).toFixed(2)} MB</div>
+                <div>💰 Turbo izmaksas (Winc): ${prepareResult.fileWinc}</div>
+                <div>💳 Jāmaksā (ETH): ${prepareResult.fileCostEth} ETH</div>
+                <div>👛 Tavi kredīti: ${prepareResult.userCredits} winc</div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('status').innerHTML = infoHtml;
 }
 
 // ==================================================
