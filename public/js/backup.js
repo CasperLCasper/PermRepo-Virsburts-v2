@@ -9,12 +9,14 @@ let repoName = null;
 let tokenId = null;
 let githubUser = null;
 let currentFileCostEth = '0';
+let currentManifestCostEth = '0';
 let currentNewUserCredits = '0';
 let currentNewManifestCredits = '0';
 let currentFileWinc = '0';
 let currentUserCredits = '0';
 let currentZipSize = 0;
 let currentFileCount = 0;
+let masterKey = null;
 
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
@@ -165,51 +167,54 @@ async function generateMasterKey(walletAddress, repoName, tokenId, githubUser) {
 }
 
 function showMasterKey(masterKey) {
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.8);
-        display: flex; justify-content: center; align-items: center;
-        z-index: 1000;
-    `;
-    
-    modal.innerHTML = `
-        <div style="background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px; max-width: 480px; width: 100%;">
-            <h2 style="color: #79c0ff; margin-bottom: 16px;">🔑 Tava Master Atslēga</h2>
-            <p style="color: #b0b8c4; margin-bottom: 16px;">Šī ir TAVA vienīgā atslēga visiem backupiem. Saglabā to drošā vietā!</p>
-            <div style="background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; word-break: break-all; font-family: monospace; color: #e6edf3;">
-                ${masterKey}
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 1000;
+        `;
+        
+        modal.innerHTML = `
+            <div style="background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px; max-width: 480px; width: 100%;">
+                <h2 style="color: #79c0ff; margin-bottom: 16px;">🔑 Tava Master Atslēga</h2>
+                <p style="color: #b0b8c4; margin-bottom: 16px;">Šī ir TAVA vienīgā atslēga visiem backupiem. Saglabā to drošā vietā!</p>
+                <div style="background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; word-break: break-all; font-family: monospace; color: #e6edf3;">
+                    ${masterKey}
+                </div>
+                <button id="copyKeyBtn" style="width: 100%; padding: 12px; background: #238636; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">📋 Kopēt</button>
+                <button id="downloadKeyBtn" style="width: 100%; padding: 12px; background: #21262d; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">⬇️ Lejupielādēt</button>
+                <button id="closeModalBtn" style="width: 100%; padding: 12px; background: #f85149; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">Es saglabāju — Turpināt</button>
             </div>
-            <button id="copyKeyBtn" style="width: 100%; padding: 12px; background: #238636; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">📋 Kopēt</button>
-            <button id="downloadKeyBtn" style="width: 100%; padding: 12px; background: #21262d; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">⬇️ Lejupielādēt</button>
-            <button id="closeModalBtn" style="width: 100%; padding: 12px; background: #f85149; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">Es saglabāju — Aizvērt</button>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    document.getElementById('copyKeyBtn').onclick = async () => {
-        await navigator.clipboard.writeText(masterKey);
-        document.getElementById('copyKeyBtn').textContent = '✅ Nokopēts!';
-    };
-    
-    document.getElementById('downloadKeyBtn').onclick = () => {
-        const blob = new Blob([masterKey], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `permrepo-master-key-${repoName.replace('/', '-')}.txt`;
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-    
-    document.getElementById('closeModalBtn').onclick = () => {
-        modal.remove();
-    };
+        `;
+        
+        document.body.appendChild(modal);
+        
+        document.getElementById('copyKeyBtn').onclick = async () => {
+            await navigator.clipboard.writeText(masterKey);
+            document.getElementById('copyKeyBtn').textContent = '✅ Nokopēts!';
+        };
+        
+        document.getElementById('downloadKeyBtn').onclick = () => {
+            const blob = new Blob([masterKey], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `permrepo-master-key-${repoName.replace('/', '-')}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+        
+        document.getElementById('closeModalBtn').onclick = () => {
+            modal.remove();
+            resolve();
+        };
+    });
 }
 
 // ==================================================
-// BACKUP PROCESS
+// BACKUP PROCESS — PAREIZA SECĪBA
 // ==================================================
 
 async function startBackup() {
@@ -220,6 +225,7 @@ async function startBackup() {
     setStatus('Sagatavo backupu...');
     
     try {
+        // 1. SOLIS: PREPARE BACKUP
         const prepareResponse = await fetch('/api/prepare-backup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -254,9 +260,51 @@ async function startBackup() {
         currentZipSize = prepareResult.estimatedZipSize || 0;
         currentFileCount = files.length;
         
-        // Parāda lietotājam informāciju
-        showBackupInfo(files, prepareResult);
+        // 2. SOLIS: MASTER KEY
+        const currentBackupCount = Number(prepareResult.backupCount || 0);
         
+        if (currentBackupCount === 0) {
+            setStatus('Ģenerē master atslēgu...');
+            button.textContent = '⏳ Atslēga...';
+            
+            const fullRepoName = `${githubUser}/${repoName}`;
+            masterKey = await generateMasterKey(userAddress, fullRepoName, tokenId, githubUser);
+            await showMasterKey(masterKey);
+        } else {
+            masterKey = prompt('Ievadi savu master atslēgu (atstāj tukšu publiskam repo):');
+            if (masterKey) {
+                masterKey = masterKey.trim();
+            }
+        }
+        
+        // 3. SOLIS: PARĀDA INFORMĀCIJU
+        currentManifestCostEth = prepareResult.fileCostEth;
+        const totalCostEth = ethers.formatEther(
+            ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth)
+        );
+        
+        showBackupInfo(files, prepareResult, totalCostEth);
+        
+        // 4. SOLIS: LIETOTĀJS IEMAKSĀ
+        const totalCostWei = ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth);
+        
+        if (totalCostWei > 0n) {
+            setStatus(`Iemaksā Treasury: ${totalCostEth} ETH...`);
+            button.textContent = '⏳ Iemaksa...';
+            
+            const tx = await signer.sendTransaction({
+                to: CONFIG.treasuryAddress,
+                value: totalCostWei
+            });
+            
+            setStatus('Gaida iemaksas apstiprinājumu...');
+            button.textContent = '⏳ Gaida...';
+            await tx.wait();
+            
+            setStatus('✅ Iemaksa veiksmīga!');
+        }
+        
+        // 5. SOLIS: IZVEIDO ZIP
         setStatus('Izveido ZIP...');
         button.textContent = '⏳ ZIP...';
         
@@ -268,57 +316,21 @@ async function startBackup() {
         
         const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
         
-        // Master key
-        const currentBackupCount = Number(prepareResult.backupCount || 0);
-        
-        let masterKey;
-        
-        if (currentBackupCount === 0) {
-            setStatus('Ģenerē master atslēgu...');
-            button.textContent = '⏳ Atslēga...';
-            
-            const fullRepoName = `${githubUser}/${repoName}`;
-            masterKey = await generateMasterKey(userAddress, fullRepoName, tokenId, githubUser);
-            showMasterKey(masterKey);
-        } else {
-            masterKey = prompt('Ievadi savu master atslēgu (atstāj tukšu publiskam repo):');
-            if (masterKey) {
-                masterKey = masterKey.trim();
-            }
-        }
-        
-        setStatus('ZIP izveidots! Šifrē...');
-        button.textContent = '⏳ Šifrē...';
-        
-        let encryptedZip = zipBuffer;
+        // 6. SOLIS: ŠIFRĒ AR MASTER KEY
+        let encryptedZipData = zipBuffer;
         let iv = null;
         
         if (masterKey && masterKey.trim()) {
+            setStatus('Šifrē ZIP ar master atslēgu...');
+            button.textContent = '⏳ Šifrē...';
+            
             const encrypted = await encryptData(zipBuffer, masterKey);
-            encryptedZip = encrypted.encrypted;
+            encryptedZipData = encrypted.encrypted;
             iv = encrypted.iv;
         }
         
-        // LIETOTĀJS IEMAKSĀ TREASURY (ja nepieciešams)
-        if (currentFileCostEth !== '0') {
-            const fileCostWei = ethers.parseEther(currentFileCostEth);
-            
-            setStatus(`Iemaksājam Treasury: ${currentFileCostEth} ETH...`);
-            button.textContent = '⏳ Iemaksa...';
-            
-            const tx = await signer.sendTransaction({
-                to: CONFIG.treasuryAddress,
-                value: fileCostWei
-            });
-            
-            setStatus('Gaida iemaksas apstiprinājumu...');
-            button.textContent = '⏳ Gaida...';
-            await tx.wait();
-            
-            setStatus('✅ Iemaksa veiksmīga!');
-        }
-        
-        setStatus('Augšupielādē ZIP...');
+        // 7. SOLIS: AUGŠUPIELĀDĒ ŠIFRĒTO ZIP
+        setStatus('Augšupielādē šifrēto ZIP...');
         button.textContent = '⏳ Augšupielāde...';
         
         const executeResponse = await fetch('/api/execute-backup', {
@@ -330,7 +342,10 @@ async function startBackup() {
                 tokenId: tokenId.toString(),
                 walletAddress: userAddress,
                 fileCostEth: currentFileCostEth,
-                newUserCredits: currentNewUserCredits
+                manifestCostEth: currentManifestCostEth,
+                newUserCredits: currentNewUserCredits,
+                encryptedZip: Array.from(encryptedZipData),
+                iv: iv ? Array.from(iv) : null
             })
         });
         
@@ -343,8 +358,7 @@ async function startBackup() {
             return;
         }
         
-        currentNewManifestCredits = executeResult.newManifestCredits || '0';
-        
+        // 8. SOLIS: PARAKSTS
         setStatus('Manifests augšupielādēts! Paraksti transakciju...');
         button.textContent = '⏳ Paraksts...';
         
@@ -423,7 +437,7 @@ async function startBackup() {
     }
 }
 
-function showBackupInfo(files, prepareResult) {
+function showBackupInfo(files, prepareResult, totalCostEth) {
     const infoHtml = `
         <div style="margin: 16px 0; padding: 16px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;">
             <h3 style="color: #79c0ff; margin-bottom: 8px;">📊 Backupa informācija</h3>
@@ -431,7 +445,9 @@ function showBackupInfo(files, prepareResult) {
                 <div>📁 Failu skaits: ${files.length}</div>
                 <div>📦 ZIP izmērs (aptuveni): ${(prepareResult.estimatedZipSize / 1024 / 1024).toFixed(2)} MB</div>
                 <div>💰 Turbo izmaksas (Winc): ${prepareResult.fileWinc}</div>
-                <div>💳 Jāmaksā (ETH): ${prepareResult.fileCostEth} ETH</div>
+                <div>💳 ZIP izmaksas: ${prepareResult.fileCostEth} ETH</div>
+                <div>📄 Manifesta izmaksas: ${currentManifestCostEth} ETH</div>
+                <div>💎 KOPĀ JĀMAKSĀ: ${totalCostEth} ETH</div>
                 <div>👛 Tavi kredīti: ${prepareResult.userCredits} winc</div>
             </div>
         </div>
