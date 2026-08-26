@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import session from 'express-session';
 import { Readable } from 'stream';
 import { TurboFactory, EthereumSigner } from '@ardrive/turbo-sdk';
+import JSZip from 'jszip';
 
 import { checkAllServices } from './healthChecks.js';
 import { submitBackupWithMerkle } from './merkle.js';
@@ -167,16 +168,10 @@ async function getEthForBytes(turbo, totalBytes) {
 async function getTurboPaymentAddress() {
     try {
         const response = await fetch(`${TURBO_PAYMENT_URL}/v1/info`);
-        
-        if (!response.ok) {
-            throw new Error(`Payment API HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`Payment API HTTP ${response.status}`);
         
         const info = await response.json();
-        
-        if (!info.addresses) {
-            throw new Error('Payment API neatgrieza addresses');
-        }
+        if (!info.addresses) throw new Error('Payment API neatgrieza addresses');
         
         const addressMap = {
             'base-eth': info.addresses['base-eth'] || info.addresses['ethereum'],
@@ -186,10 +181,7 @@ async function getTurboPaymentAddress() {
         };
         
         const turboAddress = addressMap[TURBO_TOKEN] || info.addresses['ethereum'];
-        
-        if (!turboAddress) {
-            throw new Error('Nevar atrast adresi tokenam: ' + TURBO_TOKEN);
-        }
+        if (!turboAddress) throw new Error('Nevar atrast adresi tokenam: ' + TURBO_TOKEN);
         
         return turboAddress;
     } catch (error) {
@@ -198,7 +190,7 @@ async function getTurboPaymentAddress() {
 }
 
 // ==================================================
-// GITHUB OAUTH (nemainīts)
+// GITHUB OAUTH
 // ==================================================
 
 app.get('/api/github/login', (req, res) => {
@@ -368,7 +360,7 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 }
 
 // ==================================================
-// PREPARE BACKUP
+// PREPARE BACKUP — AR INKREMENTĀLO AUGŠUPIELĀDI
 // ==================================================
 
 app.post('/api/prepare-backup', async (req, res) => {
@@ -381,6 +373,26 @@ app.post('/api/prepare-backup', async (req, res) => {
         logInfo('Repo', repoName);
         logInfo('GitHub User', githubUser);
         logInfo('Wallet', walletAddress);
+        
+        if (HEALTH_CHECKS_ENABLED) {
+            const healthParams = {
+                redis: getRedis(),
+                rpcUrl: RPC_URL,
+                operatorPrivateKey: OPERATOR_PRIVATE_KEY,
+                nftAddress: NFT_ADDRESS,
+                subscriptionAddress: SUBSCRIPTION_ADDRESS
+            };
+            
+            const health = await checkAllServices(healthParams);
+            
+            if (!health.allHealthy) {
+                return res.status(503).json({
+                    success: false,
+                    error: 'Servisi nav pieejami',
+                    health
+                });
+            }
+        }
         
         if (!repoName) return res.status(400).json({ success: false, error: 'Nav repo nosaukuma' });
         if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav maka adreses' });
@@ -414,18 +426,88 @@ app.post('/api/prepare-backup', async (req, res) => {
             return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
         }
         
-        // 3. Faili
+        // 3. Iepriekšējais manifests (inkrementālā augšupielāde)
+        const backupCount = Number(await nftContract.getBackupCount(tokenId));
+        
+        let previousPaths = {};
+        let previousHistory = [];
+        let previousManifestId = null;
+        let previousBackupNumber = null;
+        
+        if (backupCount > 0) {
+            logSection('📜 IEPRIEKŠĒJAIS MANIFESTS');
+            const manifestURI = await nftContract.getManifestURI(tokenId);
+            
+            if (manifestURI && manifestURI.startsWith('ar://')) {
+                previousManifestId = manifestURI.slice(5);
+                logInfo('Manifest ID', previousManifestId);
+                
+                try {
+                    const manifestResponse = await fetch(`${ARWEAVE_GATEWAY}/raw/${previousManifestId}`);
+                    
+                    if (manifestResponse.ok) {
+                        const previousManifest = await manifestResponse.json();
+                        if (previousManifest.paths) previousPaths = previousManifest.paths;
+                        if (previousManifest.history) previousHistory = previousManifest.history;
+                        if (previousManifest.metadata && previousManifest.metadata.backupNumber) previousBackupNumber = previousManifest.metadata.backupNumber;
+                        
+                        logInfo('Faili', Object.keys(previousPaths).length);
+                        logInfo('Vēstures ieraksti', previousHistory.length);
+                        logSuccess('Iepriekšējais manifests iegūts');
+                    }
+                } catch (e) {
+                    logWarning('Neizdevās iegūt iepriekšējo manifestu: ' + errorMessage(e));
+                }
+            }
+        }
+        
+        // 4. Pašreizējie faili
+        logSection('🌐 GITHUB FAILI');
         const currentFiles = await getRepoFiles(githubToken, githubUser, repoName);
         
         if (currentFiles.length === 0) {
             return res.status(400).json({ success: false, error: 'Nav failu repo' });
         }
+        logInfo('Kopā faili', currentFiles.length);
         
-        const totalFileBytes = currentFiles.reduce((sum, file) => sum + file.size, 0);
+        // 5. Salīdzina — mainītie un nemainītie
+        const changedFiles = [];
+        const unchangedFiles = {};
         
-        // 4. Izmaksas
-        const turbo = getTurbo();
+        for (const file of currentFiles) {
+            const previousFile = previousPaths[file.path];
+            if (previousFile && previousFile.zipId && previousFile.hash && previousFile.hash === file.hash) {
+                unchangedFiles[file.path] = { zipId: previousFile.zipId, size: file.size, hash: file.hash };
+            } else {
+                changedFiles.push(file);
+            }
+        }
+        
+        logInfo('Mainīti', changedFiles.length);
+        logInfo('Nemainīti', Object.keys(unchangedFiles).length);
+        
+        if (changedFiles.length === 0) {
+            return res.json({
+                success: true,
+                repoName: fullRepoName,
+                tokenId: tokenId.toString(),
+                files: [],
+                unchangedFiles,
+                fileCount: 0,
+                totalBytes: 0,
+                fileWinc: '0',
+                fileCostEth: '0',
+                hasPreviousBackup: backupCount > 0,
+                backupCount,
+                message: 'Nav izmaiņu'
+            });
+        }
+        
+        // 6. Izmaksas
+        const totalFileBytes = changedFiles.reduce((sum, file) => sum + file.size, 0);
         const estimatedZipSize = Math.ceil(totalFileBytes * 1.1);
+        
+        const turbo = getTurbo();
         const { totalWinc: fileWinc } = await getWincForBytes(turbo, [estimatedZipSize]);
         
         const userCredits = await getUserCredits(walletAddress);
@@ -445,15 +527,20 @@ app.post('/api/prepare-backup', async (req, res) => {
             success: true,
             repoName: fullRepoName,
             tokenId: tokenId.toString(),
-            files: currentFiles,
-            fileCount: currentFiles.length,
+            files: changedFiles,
+            unchangedFiles,
+            previousHistory,
+            previousManifestId,
+            previousBackupNumber,
+            fileCount: changedFiles.length,
             totalBytes: totalFileBytes,
             estimatedZipSize,
             fileWinc: fileWinc.toString(),
             fileCostEth,
             userCredits: userCredits.toString(),
             newUserCredits: newUserCredits.toString(),
-            backupCount: Number(await nftContract.getBackupCount(tokenId))
+            hasPreviousBackup: backupCount > 0,
+            backupCount
         });
     } catch (error) {
         logSection('❌ BACKUP PREPARE ERROR');
@@ -464,16 +551,22 @@ app.post('/api/prepare-backup', async (req, res) => {
 });
 
 // ==================================================
-// EXECUTE BACKUP (ar šifrēto ZIP)
+// EXECUTE BACKUP — AR INKREMENTĀLO AUGŠUPIELĀDI
 // ==================================================
 
 app.post('/api/execute-backup', async (req, res) => {
     try {
-        const { repoName, files, tokenId, fileCostEth, manifestCostEth, walletAddress, newUserCredits, encryptedZip, iv } = req.body;
+        const { 
+            repoName, files, unchangedFiles, tokenId, fileCostEth, manifestCostEth, 
+            walletAddress, newUserCredits, encryptedZip, iv,
+            previousHistory, previousManifestId, previousBackupNumber
+        } = req.body;
         
         logSection('📤 EXECUTE BACKUP');
         logInfo('Repo', repoName);
         logInfo('Token ID', tokenId);
+        logInfo('Mainītie faili', files.length);
+        logInfo('Nemainītie faili', Object.keys(unchangedFiles || {}).length);
         logInfo('Failu izmaksas', fileCostEth + ' ETH');
         logInfo('Manifesta izmaksas', manifestCostEth + ' ETH');
         logInfo('Wallet', walletAddress);
@@ -502,9 +595,7 @@ app.post('/api/execute-backup', async (req, res) => {
             zipBuffer = Buffer.from(encryptedZip);
             logInfo('Šifrētā ZIP izmērs', zipBuffer.length + ' bytes');
         } else {
-            // Fallback — izveido nešifrētu ZIP
             logWarning('Nav šifrētā ZIP — izveido nešifrētu');
-            const JSZip = (await import('jszip')).default;
             const zip = new JSZip();
             for (const file of files) {
                 const fileBuffer = Buffer.from(file.content, 'base64');
@@ -513,7 +604,7 @@ app.post('/api/execute-backup', async (req, res) => {
             zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
         }
         
-        // 2. ZIP APMAKSA
+        // 2. APMAKSA
         const totalCostWei = ethers.parseEther(fileCostEth) + ethers.parseEther(manifestCostEth);
         
         logSection('💳 APMAKSA');
@@ -522,7 +613,6 @@ app.post('/api/execute-backup', async (req, res) => {
             const operatorWallet = getOperatorWallet(provider);
             const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
             
-            // Pārbauda operatoru
             const treasuryRead = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, provider);
             const isOp = await treasuryRead.isOperator(operatorWallet.address);
             
@@ -540,7 +630,7 @@ app.post('/api/execute-backup', async (req, res) => {
             await new Promise(resolve => setTimeout(resolve, 5000));
         }
         
-        // 3. ZIP AUGŠUPIELĀDE
+        // 3. ZIP AUGŠUPIELĀDE (tikai mainītajiem failiem)
         logSection('📤 ZIP AUGŠUPIELĀDE');
         const zipResult = await turbo.uploadFile({
             fileStreamFactory: () => Readable.from(zipBuffer),
@@ -562,9 +652,21 @@ app.post('/api/execute-backup', async (req, res) => {
         // 4. KREDĪTI
         await setUserCredits(walletAddress, BigInt(newUserCredits || '0'));
         
-        // 5. MANIFESTS
+        // 5. MANIFESTS — ar vēsturi un nemainītajiem failiem
         const backupCount = Number(await nftContract.getBackupCount(tokenId));
         const newBackupNumber = backupCount + 1;
+        
+        const history = [...(previousHistory || [])];
+        
+        if (previousManifestId) {
+            history.push({
+                backupNumber: previousBackupNumber || history.length,
+                manifestId: previousManifestId,
+                url: `${ARWEAVE_GATEWAY}/raw/${previousManifestId}`
+            });
+        }
+        
+        history.sort((a, b) => Number(b.backupNumber) - Number(a.backupNumber));
         
         const manifest = {
             metadata: {
@@ -578,16 +680,37 @@ app.post('/api/execute-backup', async (req, res) => {
             encryption: iv ? { iv } : null,
             archive: {
                 id: zipResult.id,
-                url: `${ARWEAVE_GATEWAY}/raw/${zipResult.id}`
+                url: `${ARWEAVE_GATEWAY}/raw/${zipResult.id}`,
+                contains: files.map(file => ({
+                    path: file.path,
+                    hash: file.hash
+                }))
             },
-            paths: {}
+            paths: {},
+            history
         };
         
+        // Mainītie faili — jaunais ZIP
         for (const file of files) {
             manifest.paths[file.path] = {
                 zipId: zipResult.id,
                 hash: file.hash
             };
+        }
+        
+        // Nemainītie faili — vecais ZIP
+        for (const [filePath, info] of Object.entries(unchangedFiles || {})) {
+            if (info && info.zipId) {
+                manifest.paths[filePath] = {
+                    zipId: info.zipId,
+                    hash: info.hash
+                };
+            }
+        }
+        
+        const manifestPaths = Object.keys(manifest.paths);
+        if (manifestPaths.length > 0) {
+            manifest.index = { path: manifest.paths['README.md'] ? 'README.md' : manifestPaths[0] };
         }
         
         const manifestBuffer = Buffer.from(JSON.stringify(manifest), 'utf8');
