@@ -374,4 +374,322 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 app.post('/api/prepare-backup', async (req, res) => {
     try {
         const { repoName, walletAddress } = req.body;
-        const githubToken = req.session
+        const githubToken = req.session.githubToken;
+        const githubUser = req.session.githubUser;
+        
+        logSection('📥 PREPARE BACKUP');
+        logInfo('Repo', repoName);
+        logInfo('GitHub User', githubUser);
+        logInfo('Wallet', walletAddress);
+        
+        if (!repoName) return res.status(400).json({ success: false, error: 'Nav repo nosaukuma' });
+        if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav maka adreses' });
+        if (!githubToken) return res.status(401).json({ success: false, error: 'Nav GitHub autorizācijas' });
+        if (!githubUser) return res.status(401).json({ success: false, error: 'Nav GitHub lietotāja' });
+        
+        const fullRepoName = `${githubUser}/${repoName}`;
+        
+        const provider = getProvider();
+        
+        // 1. Abonements
+        const subscriptionContract = new ethers.Contract(SUBSCRIPTION_ADDRESS, SUBSCRIPTION_ABI, provider);
+        const githubHash = getGithubHash(githubUser);
+        const isSubscribed = await subscriptionContract.isSubscribed(githubHash);
+        
+        if (!isSubscribed) {
+            return res.status(403).json({ success: false, error: 'Abonements nav aktīvs' });
+        }
+        
+        // 2. NFT
+        const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
+        const repoHash = getRepositoryHash(fullRepoName);
+        const tokenId = await nftContract.repositoryTokens(repoHash);
+        
+        if (tokenId === 0n) {
+            return res.status(400).json({ success: false, error: 'Nav NFT šim repo' });
+        }
+        
+        const nftOwner = await nftContract.ownerOf(tokenId);
+        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) {
+            return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
+        }
+        
+        // 3. Faili
+        const currentFiles = await getRepoFiles(githubToken, githubUser, repoName);
+        
+        if (currentFiles.length === 0) {
+            return res.status(400).json({ success: false, error: 'Nav failu repo' });
+        }
+        
+        const totalFileBytes = currentFiles.reduce((sum, file) => sum + file.size, 0);
+        
+        // 4. Izmaksas
+        const turbo = getTurbo();
+        const estimatedZipSize = Math.ceil(totalFileBytes * 1.1);
+        const { totalWinc: fileWinc } = await getWincForBytes(turbo, [estimatedZipSize]);
+        
+        const userCredits = await getUserCredits(walletAddress);
+        
+        let fileCostEth;
+        let newUserCredits;
+        
+        if (userCredits >= fileWinc) {
+            newUserCredits = userCredits - fileWinc;
+            fileCostEth = '0';
+        } else {
+            fileCostEth = await getEthForBytes(turbo, estimatedZipSize);
+            newUserCredits = 0n;
+        }
+        
+        res.json({
+            success: true,
+            repoName: fullRepoName,
+            tokenId: tokenId.toString(),
+            files: currentFiles,
+            fileCount: currentFiles.length,
+            totalBytes: totalFileBytes,
+            estimatedZipSize,
+            fileWinc: fileWinc.toString(),
+            fileCostEth,
+            userCredits: userCredits.toString(),
+            newUserCredits: newUserCredits.toString(),
+            backupCount: Number(await nftContract.getBackupCount(tokenId))
+        });
+    } catch (error) {
+        logSection('❌ BACKUP PREPARE ERROR');
+        logError(errorMessage(error));
+        console.error(error);
+        return res.status(500).json({ success: false, error: errorMessage(error) });
+    }
+});
+
+// ==================================================
+// EXECUTE BACKUP (ar šifrēto ZIP)
+// ==================================================
+
+app.post('/api/execute-backup', async (req, res) => {
+    try {
+        const { repoName, files, tokenId, fileCostEth, manifestCostEth, walletAddress, newUserCredits, encryptedZip, iv } = req.body;
+        
+        logSection('📤 EXECUTE BACKUP');
+        logInfo('Repo', repoName);
+        logInfo('Token ID', tokenId);
+        logInfo('Failu izmaksas', fileCostEth + ' ETH');
+        logInfo('Manifesta izmaksas', manifestCostEth + ' ETH');
+        logInfo('Wallet', walletAddress);
+        logInfo('Šifrēts ZIP', encryptedZip ? '✅ JĀ' : '❌ NĒ');
+        
+        if (!repoName) return res.status(400).json({ success: false, error: 'Nav repoName' });
+        if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav walletAddress' });
+        if (!Array.isArray(files)) return res.status(400).json({ success: false, error: 'files nav masīvs' });
+        if (!tokenId) return res.status(400).json({ success: false, error: 'Nav tokenId' });
+        if (fileCostEth === undefined) return res.status(400).json({ success: false, error: 'Nav fileCostEth' });
+        if (manifestCostEth === undefined) return res.status(400).json({ success: false, error: 'Nav manifestCostEth' });
+        
+        const provider = getProvider();
+        const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
+        
+        const nftOwner = await nftContract.ownerOf(tokenId);
+        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) {
+            return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
+        }
+        
+        const turbo = getTurbo();
+        
+        // 1. ZIP dati — izmanto šifrēto ZIP, ja ir
+        let zipBuffer;
+        if (encryptedZip && Array.isArray(encryptedZip)) {
+            zipBuffer = Buffer.from(encryptedZip);
+            logInfo('Šifrētā ZIP izmērs', zipBuffer.length + ' bytes');
+        } else {
+            // Fallback — izveido nešifrētu ZIP
+            logWarning('Nav šifrētā ZIP — izveido nešifrētu');
+            const JSZip = (await import('jszip')).default;
+            const zip = new JSZip();
+            for (const file of files) {
+                const fileBuffer = Buffer.from(file.content, 'base64');
+                zip.file(file.path, fileBuffer);
+            }
+            zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+        }
+        
+        // 2. ZIP APMAKSA
+        const totalCostWei = ethers.parseEther(fileCostEth) + ethers.parseEther(manifestCostEth);
+        
+        logSection('💳 APMAKSA');
+        if (totalCostWei > 0n) {
+            const turboAddress = await getTurboPaymentAddress();
+            const operatorWallet = getOperatorWallet(provider);
+            const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
+            
+            // Pārbauda operatoru
+            const treasuryRead = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, provider);
+            const isOp = await treasuryRead.isOperator(operatorWallet.address);
+            
+            if (!isOp) {
+                return res.status(500).json({ success: false, error: 'Operators nav atļauts Treasury līgumā' });
+            }
+            
+            const paymentId = ethers.id(repoName + '-backup-' + Date.now().toString());
+            const payTx = await treasuryWrite.payTurbo(totalCostWei, paymentId, turboAddress);
+            await payTx.wait();
+            
+            logSuccess('Transakcija: ' + payTx.hash);
+            logInfo('Payment ID', paymentId);
+            
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+        
+        // 3. ZIP AUGŠUPIELĀDE
+        logSection('📤 ZIP AUGŠUPIELĀDE');
+        const zipResult = await turbo.uploadFile({
+            fileStreamFactory: () => Readable.from(zipBuffer),
+            fileSizeFactory: () => zipBuffer.length,
+            dataItemOpts: {
+                tags: [
+                    { name: 'App-Name', value: 'PermRepo' },
+                    { name: 'Repo', value: repoName },
+                    { name: 'Type', value: 'backup-archive' },
+                    { name: 'Content-Type', value: 'application/zip' },
+                    { name: 'Encrypted', value: encryptedZip ? 'true' : 'false' },
+                    { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
+                ]
+            }
+        });
+        
+        logSuccess(`ZIP TX ID: ${zipResult.id}`);
+        
+        // 4. KREDĪTI
+        await setUserCredits(walletAddress, BigInt(newUserCredits || '0'));
+        
+        // 5. MANIFESTS
+        const backupCount = Number(await nftContract.getBackupCount(tokenId));
+        const newBackupNumber = backupCount + 1;
+        
+        const manifest = {
+            metadata: {
+                repo: repoName,
+                backupNumber: newBackupNumber,
+                timestamp: new Date().toISOString(),
+                generatedBy: 'PermRepo v1.0.0'
+            },
+            manifest: 'arweave/paths',
+            version: '0.2.0',
+            encryption: iv ? { iv } : null,
+            archive: {
+                id: zipResult.id,
+                url: `${ARWEAVE_GATEWAY}/raw/${zipResult.id}`
+            },
+            paths: {}
+        };
+        
+        for (const file of files) {
+            manifest.paths[file.path] = {
+                zipId: zipResult.id,
+                hash: file.hash
+            };
+        }
+        
+        const manifestBuffer = Buffer.from(JSON.stringify(manifest), 'utf8');
+        
+        // 6. MANIFESTA AUGŠUPIELĀDE
+        logSection('📤 MANIFESTA AUGŠUPIELĀDE');
+        const manifestResult = await turbo.uploadFile({
+            fileStreamFactory: () => Readable.from(manifestBuffer),
+            fileSizeFactory: () => manifestBuffer.length,
+            dataItemOpts: {
+                tags: [
+                    { name: 'App-Name', value: 'PermRepo' },
+                    { name: 'Type', value: 'path-manifest' },
+                    { name: 'Repo', value: repoName },
+                    { name: 'Content-Type', value: 'application/x.arweave-manifest+json' },
+                    { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
+                ]
+            }
+        });
+        
+        logSuccess(`MANIFEST TX ID: ${manifestResult.id}`);
+        
+        res.json({
+            success: true,
+            zipTxId: zipResult.id,
+            manifestTxId: manifestResult.id,
+            manifest,
+            backupNumber: newBackupNumber
+        });
+    } catch (error) {
+        logSection('❌ BACKUP EXECUTE ERROR');
+        logError(errorMessage(error));
+        console.error(error);
+        return res.status(500).json({ success: false, error: errorMessage(error) });
+    }
+});
+
+// ==================================================
+// FINALIZE BACKUP
+// ==================================================
+
+app.post('/api/finalize-backup', async (req, res) => {
+    try {
+        const { tokenId, manifestTxId, files, deadline, signature } = req.body;
+        
+        if (!tokenId) return res.status(400).json({ success: false, error: 'Nav tokenId' });
+        if (!manifestTxId) return res.status(400).json({ success: false, error: 'Nav manifestTxId' });
+        if (!signature) return res.status(400).json({ success: false, error: 'Nav signature' });
+        
+        const provider = getProvider();
+        const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
+        
+        const merkleTxHash = await submitBackupWithMerkle({
+            tokenId,
+            manifestTxId,
+            files: files || [],
+            deadline,
+            signature,
+            nftContract: new ethers.Contract(NFT_ADDRESS, NFT_ABI, getOperatorWallet(provider)),
+            readContract: nftContract
+        });
+        
+        logSuccess('Merkle sakne iesniegta!');
+        logInfo('Transakcija', merkleTxHash);
+        
+        res.json({ success: true, merkleTxHash });
+    } catch (error) {
+        logError('Sign kļūda: ' + errorMessage(error));
+        res.status(500).json({ success: false, error: errorMessage(error) });
+    }
+});
+
+// ==================================================
+// HEALTH & START
+// ==================================================
+
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        configured: {
+            rpc: !!RPC_URL,
+            operatorKey: !!OPERATOR_PRIVATE_KEY,
+            treasury: !!TREASURY_ADDRESS,
+            nft: !!NFT_ADDRESS,
+            subscription: !!SUBSCRIPTION_ADDRESS,
+            usdc: !!USDC_ADDRESS,
+            githubOAuth: !!(GITHUB_CLIENT_ID && GITHUB_CLIENT_SECRET && GITHUB_REDIRECT_URI),
+            redis: !!getRedis()
+        }
+    });
+});
+
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+    logSection('🚀 PERMAREPO SERVERIS');
+    logInfo('Ports', PORT);
+    logInfo('TREASURY_ADDRESS', TREASURY_ADDRESS || '❌ NAV');
+    logInfo('NFT_ADDRESS', NFT_ADDRESS || '❌ NAV');
+    logInfo('SUBSCRIPTION_ADDRESS', SUBSCRIPTION_ADDRESS || '❌ NAV');
+    logInfo('USDC_ADDRESS', USDC_ADDRESS || '❌ NAV');
+    console.log('='.repeat(60) + '\n');
+});
