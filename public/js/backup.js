@@ -17,6 +17,10 @@ let currentUserCredits = '0';
 let currentZipSize = 0;
 let currentFileCount = 0;
 let masterKey = null;
+let currentUnchangedFiles = {};
+let currentPreviousHistory = [];
+let currentPreviousManifestId = null;
+let currentPreviousBackupNumber = null;
 
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
@@ -214,7 +218,7 @@ function showMasterKey(masterKey) {
 }
 
 // ==================================================
-// BACKUP PROCESS — PAREIZA SECĪBA
+// BACKUP PROCESS
 // ==================================================
 
 async function startBackup() {
@@ -225,7 +229,7 @@ async function startBackup() {
     setStatus('Sagatavo backupu...');
     
     try {
-        // 1. SOLIS: PREPARE BACKUP
+        // 1. PREPARE BACKUP
         const prepareResponse = await fetch('/api/prepare-backup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -259,8 +263,12 @@ async function startBackup() {
         currentUserCredits = prepareResult.userCredits || '0';
         currentZipSize = prepareResult.estimatedZipSize || 0;
         currentFileCount = files.length;
+        currentUnchangedFiles = prepareResult.unchangedFiles || {};
+        currentPreviousHistory = prepareResult.previousHistory || [];
+        currentPreviousManifestId = prepareResult.previousManifestId || null;
+        currentPreviousBackupNumber = prepareResult.previousBackupNumber || null;
         
-        // 2. SOLIS: MASTER KEY
+        // 2. MASTER KEY
         const currentBackupCount = Number(prepareResult.backupCount || 0);
         
         if (currentBackupCount === 0) {
@@ -277,16 +285,14 @@ async function startBackup() {
             }
         }
         
-        // 3. SOLIS: PARĀDA INFORMĀCIJU
+        // 3. PARĀDA INFORMĀCIJU
         currentManifestCostEth = prepareResult.fileCostEth;
-        const totalCostEth = ethers.formatEther(
-            ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth)
-        );
         
-        showBackupInfo(files, prepareResult, totalCostEth);
+        showBackupInfo(prepareResult, files);
         
-        // 4. SOLIS: LIETOTĀJS IEMAKSĀ
+        // 4. IEMAKSA
         const totalCostWei = ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth);
+        const totalCostEth = ethers.formatEther(totalCostWei);
         
         if (totalCostWei > 0n) {
             setStatus(`Iemaksā Treasury: ${totalCostEth} ETH...`);
@@ -304,7 +310,7 @@ async function startBackup() {
             setStatus('✅ Iemaksa veiksmīga!');
         }
         
-        // 5. SOLIS: IZVEIDO ZIP
+        // 5. ZIP IZVEIDE
         setStatus('Izveido ZIP...');
         button.textContent = '⏳ ZIP...';
         
@@ -316,7 +322,7 @@ async function startBackup() {
         
         const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
         
-        // 6. SOLIS: ŠIFRĒ AR MASTER KEY
+        // 6. ŠIFRĒ
         let encryptedZipData = zipBuffer;
         let iv = null;
         
@@ -329,8 +335,8 @@ async function startBackup() {
             iv = encrypted.iv;
         }
         
-        // 7. SOLIS: AUGŠUPIELĀDĒ ŠIFRĒTO ZIP
-        setStatus('Augšupielādē šifrēto ZIP...');
+        // 7. AUGŠUPIELĀDE
+        setStatus('Augšupielādē...');
         button.textContent = '⏳ Augšupielāde...';
         
         const executeResponse = await fetch('/api/execute-backup', {
@@ -339,13 +345,17 @@ async function startBackup() {
             body: JSON.stringify({
                 repoName: `${githubUser}/${repoName}`,
                 files,
+                unchangedFiles: currentUnchangedFiles,
                 tokenId: tokenId.toString(),
                 walletAddress: userAddress,
                 fileCostEth: currentFileCostEth,
                 manifestCostEth: currentManifestCostEth,
                 newUserCredits: currentNewUserCredits,
                 encryptedZip: Array.from(encryptedZipData),
-                iv: iv ? Array.from(iv) : null
+                iv: iv ? Array.from(iv) : null,
+                previousHistory: currentPreviousHistory,
+                previousManifestId: currentPreviousManifestId,
+                previousBackupNumber: currentPreviousBackupNumber
             })
         });
         
@@ -358,7 +368,7 @@ async function startBackup() {
             return;
         }
         
-        // 8. SOLIS: PARAKSTS
+        // 8. PARAKSTS
         setStatus('Manifests augšupielādēts! Paraksti transakciju...');
         button.textContent = '⏳ Paraksts...';
         
@@ -417,7 +427,13 @@ async function startBackup() {
         const finalizeResult = await finalizeResponse.json();
         
         if (finalizeResult.success) {
-            setStatus('✅ Backups veiksmīgi pabeigts!');
+            document.getElementById('status').innerHTML = `
+                ✅ Backups veiksmīgi pabeigts!<br><br>
+                📦 Manifests: <a href="${CONFIG.arweaveGateway}/raw/${executeResult.manifestTxId}" target="_blank">ar://${executeResult.manifestTxId}</a><br>
+                💳 Failu izmaksas: ${currentFileCostEth} ETH<br>
+                📄 Manifesta izmaksas: ${currentManifestCostEth} ETH<br>
+                💎 Kopā: ${totalCostEth} ETH
+            `;
             button.textContent = '✅ Pabeigts!';
             await loadNFTInfo();
         } else {
@@ -437,18 +453,24 @@ async function startBackup() {
     }
 }
 
-function showBackupInfo(files, prepareResult, totalCostEth) {
+function showBackupInfo(prepareResult, files) {
+    const totalCostEth = ethers.formatEther(
+        ethers.parseEther(prepareResult.fileCostEth) + ethers.parseEther(prepareResult.fileCostEth)
+    );
+    
     const infoHtml = `
         <div style="margin: 16px 0; padding: 16px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;">
-            <h3 style="color: #79c0ff; margin-bottom: 8px;">📊 Backupa informācija</h3>
-            <div style="color: #b0b8c4; font-size: 14px;">
-                <div>📁 Failu skaits: ${files.length}</div>
-                <div>📦 ZIP izmērs (aptuveni): ${(prepareResult.estimatedZipSize / 1024 / 1024).toFixed(2)} MB</div>
-                <div>💰 Turbo izmaksas (Winc): ${prepareResult.fileWinc}</div>
-                <div>💳 ZIP izmaksas: ${prepareResult.fileCostEth} ETH</div>
-                <div>📄 Manifesta izmaksas: ${currentManifestCostEth} ETH</div>
-                <div>💎 KOPĀ JĀMAKSĀ: ${totalCostEth} ETH</div>
-                <div>👛 Tavi kredīti: ${prepareResult.userCredits} winc</div>
+            <h3 style="color: #79c0ff; margin-bottom: 12px;">📊 Backupa informācija</h3>
+            <div style="color: #b0b8c4; font-size: 14px; line-height: 1.8;">
+                <div>📦 Mainītie faili: <strong style="color: #e6edf3;">${files.length}</strong></div>
+                <div>📁 Nemainītie faili: <strong style="color: #e6edf3;">${Object.keys(prepareResult.unchangedFiles || {}).length}</strong></div>
+                <div>📦 ZIP izmērs (aptuveni): <strong style="color: #e6edf3;">${(prepareResult.estimatedZipSize / 1024 / 1024).toFixed(2)} MB</strong></div>
+                <div>💰 Failu izmaksas: <strong style="color: #e6edf3;">${prepareResult.fileCostEth} ETH</strong></div>
+                <div>📄 Manifesta izmaksas: <strong style="color: #e6edf3;">${prepareResult.fileCostEth} ETH</strong></div>
+                <div>👛 Tavi kredīti: <strong style="color: #e6edf3;">${prepareResult.userCredits} winc</strong></div>
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #30363d;">
+                    💎 <strong style="color: #3fb950; font-size: 16px;">KOPĀ JĀMAKSĀ: ${totalCostEth} ETH</strong>
+                </div>
             </div>
         </div>
     `;
