@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PermRepo</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>🔒 PermRepo</h1>
+    <p class="subtitle">GitHub repo backupi uz Arweave</p>
+    
+    <!-- Abonementa status -->
+    <div id="subscriptionSection" style="display: none;">
+        <button id="subscriptionButton" class="subscription-button" disabled></button>
+    </div>
+    
+    <!-- GitHub auth -->
+    <div id="authSection" style="display: none;">
+        <button id="loginButton" class="sign-button">Savienot ar GitHub</button>
+    </div>
+    
+    <!-- User info -->
+    <div id="userSection" style="display: none;">
+        <div class="info-row text-left">
+            <span class="info-label">Lietotājs</span>
+            <span class="info-value" id="userName">-</span>
+        </div>
+        <button id="logoutButton" class="logout-button">Izrakstīties</button>
+    </div>
+    
+    <!-- Wallet -->
+    <div id="walletSection" style="display: none;">
+        <div class="info-row text-left">
+            <span class="info-label">Maks</span>
+            <span class="info-value" id="walletAddress">-</span>
+        </div>
+        <button id="connectWalletButton" class="sign-button">Savienot MetaMask</button>
+    </div>
+    
+    <!-- Repo list -->
+    <div id="repoSection" style="display: none;">
+        <div class="repo-list" id="repoList"></div>
+    </div>
+    
+    <div class="status" id="status"></div>
+    <div class="error" id="error"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
