@@ -76,14 +76,35 @@ h1 {
 }
 .subtitle { color: #ffffff; margin-bottom: 24px; font-size: 16px; text-align: center; }
 
-.info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #21262d; }
-.info-row.text-left { text-align: left; flex-direction: column; gap: 8px; border-bottom: none; }
-.info-label { 
-    color: #ffffff; 
-    font-size: 16px; 
-    font-weight: 600;
+/* Info rindas ar skaidru atdalīšanu */
+.info-row { 
+    display: flex; 
+    justify-content: space-between; 
+    padding: 16px 0; 
+    border-bottom: 1px solid #30363d;
+    margin-bottom: 8px;
 }
-.info-value { font-weight: 600; font-size: 14px; word-break: break-all; color: #ffffff; }
+.info-row.text-left { 
+    text-align: left; 
+    flex-direction: column; 
+    gap: 8px; 
+    border-bottom: 1px solid #30363d;
+    margin-bottom: 8px;
+}
+.info-label { 
+    color: #8b949e; 
+    font-size: 14px; 
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.info-value { 
+    font-weight: 600; 
+    font-size: 16px; 
+    word-break: break-all; 
+    color: #ffffff;
+    padding: 4px 0;
+}
 
 .word-break { word-break: break-all; font-size: 12px; color: #ffffff; }
 
@@ -204,7 +225,7 @@ button:disabled {
 
 button.sign-button { padding: 20px; font-size: 20px; }
 
-/* Backup poga — ZAĻA ar bagātīgu gradientu */
+/* Backup poga — ZAĻA */
 button.backup-button {
     background: linear-gradient(135deg, #1a7f37 0%, #238636 25%, #2ea043 50%, #238636 75%, #1a7f37 100%);
     color: #ffffff;
@@ -223,19 +244,21 @@ button.backup-button:hover {
     border-color: #2ea043;
 }
 
-/* Logout poga */
+/* Logout poga — SARKANS teksts */
 button.logout-button { 
     background: linear-gradient(135deg, #21262d 0%, #30363d 50%, #21262d 100%); 
-    color: #ffffff; 
+    color: #f85149; 
     padding: 10px; 
     font-size: 14px; 
     margin-top: 8px;
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(248, 81, 73, 0.2);
+    font-weight: 700;
 }
 button.logout-button:hover {
     background: linear-gradient(135deg, #30363d 0%, #3d444d 50%, #30363d 100%);
+    color: #ff6b64;
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(248, 81, 73, 0.15);
 }
 
 /* Abonementa poga */
