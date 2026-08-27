@@ -230,7 +230,11 @@
                 showDebug('Failu skaits paths: ' + Object.keys(manifest.paths).length);
                 showDebug('Backup numurs: ' + manifest.metadata?.backupNumber);
                 
-                // 3. Savāc visus unikālos ZIP ID no paths
+                // 3. Iegūst IV vēsturi
+                const encryptionIVs = manifest.encryption?.ivs || {};
+                showDebug('IV vēstures ieraksti: ' + Object.keys(encryptionIVs).length);
+                
+                // 4. Savāc visus unikālos ZIP ID
                 const zipIds = new Set();
                 const fileZipMap = {};
                 
@@ -243,12 +247,8 @@
                 }
                 
                 showDebug('Unikālie ZIP faili: ' + zipIds.size);
-                showDebug('ZIP ID saraksts:');
-                for (const zipId of zipIds) {
-                    showDebug(`  - ${zipId}`);
-                }
                 
-                // 4. Lejupielādē un atšifrē katru ZIP
+                // 5. Lejupielādē un atšifrē katru ZIP ar ATBILSTOŠO IV
                 showStatus(`📦 Lejupielādē ${zipIds.size} ZIP arhīvus...`, 'status');
                 showProgress(20);
                 
@@ -262,18 +262,19 @@
                     
                     let decryptedZipBuffer = zipBuffer;
                     
-                    // Atšifrē, ja manifestā ir IV
-                    if (manifest.encryption?.iv) {
-                        const iv = manifest.encryption.iv;
+                    // Atrod IV šim ZIP no ivs vēstures
+                    const iv = encryptionIVs[zipId];
+                    
+                    if (iv && Array.isArray(iv) && iv.length === 12) {
                         try {
                             decryptedZipBuffer = await decryptData(zipBuffer, iv, masterKey);
-                            showDebug(`ZIP atšifrēts: ${zipId}`);
+                            showDebug(`✅ ZIP atšifrēts ar IV: ${zipId}`);
                         } catch (e) {
-                            showDebug(`⚠️ Neizdevās atšifrēt ${zipId} ar IV no pēdējā manifesta`);
-                            
-                            // Mēģina bez atšifrēšanas (varbūt nav šifrēts)
+                            showDebug(`⚠️ Neizdevās atšifrēt ${zipId}: ${e.message}`);
                             decryptedZipBuffer = zipBuffer;
                         }
+                    } else {
+                        showDebug(`ZIP nav šifrēts vai nav IV: ${zipId}`);
                     }
                     
                     try {
@@ -288,7 +289,7 @@
                     showProgress(20 + (zipIndex / zipIds.size) * 40);
                 }
                 
-                // 5. Izvelk visus failus no ZIP failiem pēc paths
+                // 6. Izvelk failus
                 showStatus('📂 Izvelk failus...', 'status');
                 showProgress(60);
                 
@@ -301,74 +302,7 @@
                     
                     let fileData = null;
                     
-                    // Mēģina atrast failu pēc ceļa
                     if (zip.file(filePath)) {
                         fileData = await zip.file(filePath).async('uint8array');
                     } else {
-                        // Mēģina atrast pēc faila nosaukuma
-                        const fileName = filePath.split('/').pop();
-                        const matchingFile = Object.values(zip.files).find(f => 
-                            f.name === fileName || f.name.endsWith('/' + fileName)
-                        );
-                        
-                        if (matchingFile && !matchingFile.dir) {
-                            fileData = await matchingFile.async('uint8array');
-                        }
-                    }
-                    
-                    if (fileData) {
-                        finalFiles[filePath] = fileData;
-                        showDebug(`✅ Atjaunots: ${filePath}`);
-                    } else {
-                        showDebug(`❌ Nav atrasts ZIP: ${filePath}`);
-                    }
-                }
-                
-                showDebug('Kopā atjaunoti faili: ' + Object.keys(finalFiles).length);
-                
-                // 6. Izveido galīgo ZIP
-                showStatus(`📦 Veido ZIP ar ${Object.keys(finalFiles).length} failiem...`, 'status');
-                showProgress(80);
-                
-                const finalZip = new JSZip();
-                for (const [filePath, data] of Object.entries(finalFiles)) {
-                    finalZip.file(filePath, data);
-                }
-                
-                const finalBlob = await finalZip.generateAsync({ type: 'blob' });
-                
-                // 7. Lejupielādē
-                showProgress(100);
-                
-                const repoName = manifest.metadata?.repo || 'repo';
-                const url = URL.createObjectURL(finalBlob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${repoName}-atjaunots.zip`;
-                a.click();
-                URL.revokeObjectURL(url);
-                
-                hideProgress();
-                showStatus(`✅ Repozitorijs atjaunots!\nFaili: ${Object.keys(finalFiles).length}\nZIP arhīvi: ${zipIds.size}`, 'success');
-                
-            } catch (e) {
-                console.error('Kļūda:', e);
-                hideProgress();
-                showStatus('❌ Kļūda: ' + e.message, 'error');
-            } finally {
-                button.disabled = false;
-                button.textContent = '📥 Atjaunot repozitoriju';
-            }
-        }
-        
-        // Automātiski aizpilda no URL parametra
-        window.addEventListener('DOMContentLoaded', () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const manifestParam = urlParams.get('manifest');
-            if (manifestParam) {
-                document.getElementById('manifestInput').value = manifestParam;
-            }
-        });
-    </script>
-</body>
-</html>
+                        const
