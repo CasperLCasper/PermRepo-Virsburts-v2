@@ -113,8 +113,11 @@ async function loadNFTInfo() {
         const lastMerkleRoot = await nftContract.getLastMerkleRoot(tokenId);
         document.getElementById('lastMerkleRoot').textContent = lastMerkleRoot || 'Nav';
         
-        document.getElementById('startBackupButton').disabled = false;
-        document.getElementById('startBackupButton').onclick = prepareBackup;
+        const button = document.getElementById('startBackupButton');
+        button.style.display = 'block';
+        button.disabled = false;
+        button.textContent = 'Sākt backupu';
+        button.onclick = prepareBackup;
         
     } catch (e) {
         showError(e.message);
@@ -215,7 +218,7 @@ function showMasterKey(masterKey) {
 }
 
 // ==================================================
-// 1. PREPARE BACKUP — parāda informāciju uzreiz
+// 1. PREPARE BACKUP
 // ==================================================
 
 async function prepareBackup() {
@@ -258,7 +261,6 @@ async function prepareBackup() {
             return;
         }
         
-        // UZREIZ PARĀDA INFORMĀCIJU
         const totalBytes = result.totalBytes || 0;
         const totalCostEth = ethers.formatEther(
             ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth)
@@ -449,15 +451,16 @@ async function executeBackup() {
         if (finalizeResult.success) {
             const totalCostEth = ethers.formatEther(totalCostWei);
             
+            // PASLĒP POGU
+            button.style.display = 'none';
+            
+            // PARĀDA PAZIŅOJUMU
             document.getElementById('status').innerHTML = 
                 `✅ Backups veiksmīgi pabeigts!<br><br>` +
                 `📦 Manifests: <a href="${CONFIG.arweaveGateway}/raw/${executeResult.manifestTxId}" target="_blank">ar://${executeResult.manifestTxId}</a><br>` +
                 `💳 Failu izmaksas: ${currentFileCostEth} ETH<br>` +
                 `📄 Manifesta izmaksas: ${currentManifestCostEth} ETH<br>` +
                 `💎 Kopā: ${totalCostEth} ETH`;
-            
-            button.textContent = '✅ Pabeigts!';
-            await loadNFTInfo();
         } else {
             showError(finalizeResult.error || 'Kļūda');
             button.disabled = false;
@@ -470,6 +473,7 @@ async function executeBackup() {
         } else {
             showError(e.message);
         }
+        button.style.display = 'block';
         button.disabled = false;
         button.textContent = 'Iemaksāt un augšupielādēt';
     }
