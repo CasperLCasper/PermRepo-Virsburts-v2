@@ -24,42 +24,51 @@ body {
 }
 
 /* Valodu izvēle */
-.language-selector { display: flex; justify-content: center; gap: 16px; margin-bottom: 24px; }
+.language-selector { display: flex; justify-content: center; gap: 20px; margin-bottom: 24px; }
 .lang-btn { 
     width: auto; 
-    padding: 10px 20px; 
-    background: #ffffff; 
-    border: 2px solid #ffffff;
-    border-radius: 8px;
-    color: #0d1117; 
-    font-size: 16px; 
-    font-weight: 700;
+    padding: 8px 16px; 
+    background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%); 
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #ffffff; 
+    font-size: 18px; 
+    font-weight: 600;
     cursor: pointer; 
     margin: 0; 
     transition: all 0.3s ease; 
+    position: relative;
     letter-spacing: 1px;
-    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
 }
 .lang-btn:hover { 
-    background: #e6edf3;
-    transform: translateY(-3px);
-    box-shadow: 0 8px 20px rgba(255, 255, 255, 0.25);
-    border-color: #e6edf3;
+    color: #79c0ff; 
+    transform: scale(1.15);
+    background: linear-gradient(180deg, rgba(121, 192, 255, 0.1) 0%, rgba(121, 192, 255, 0.05) 100%);
+    border-color: rgba(121, 192, 255, 0.3);
+    box-shadow: 0 2px 8px rgba(121, 192, 255, 0.15);
 }
 .lang-btn.active { 
-    background: #ffffff;
-    color: #0d1117;
-    border-color: #79c0ff;
-    box-shadow: 
-        0 4px 12px rgba(255, 255, 255, 0.2),
-        0 0 20px rgba(121, 192, 255, 0.4);
-    transform: translateY(-2px);
+    color: #79c0ff; 
+    font-weight: 700;
+    background: linear-gradient(180deg, rgba(121, 192, 255, 0.15) 0%, rgba(121, 192, 255, 0.05) 100%);
+    border-color: rgba(121, 192, 255, 0.4);
+}
+.lang-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #79c0ff, transparent);
+    border-radius: 1px;
 }
 
 h1 { 
     font-size: 32px; 
     margin-bottom: 8px; 
-    background: linear-gradient(135deg, #ffffff 0%, #79c0ff 50%, #ffffff 100%);
+    background: linear-gradient(135deg, #79c0ff 0%, #a5d6ff 50%, #79c0ff 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -82,45 +91,39 @@ h1 {
 .repo-select {
     width: 100%;
     padding: 14px;
-    background: #ffffff;
-    border: 2px solid #ffffff;
-    border-radius: 8px;
-    color: #0d1117;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
+    border: none;
+    border-bottom: 2px solid #30363d;
+    color: #ffffff;
     font-size: 16px;
-    font-weight: 600;
     margin-top: 8px;
     margin-bottom: 16px;
     cursor: pointer;
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230d1117' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2379c0ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
     background-repeat: no-repeat;
     background-position: right 12px center;
     background-size: 16px;
     padding-right: 40px;
     transition: all 0.3s;
-    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
 }
 
 .repo-select:hover { 
-    background: #e6edf3;
-    border-color: #e6edf3;
-    box-shadow: 0 8px 20px rgba(255, 255, 255, 0.2);
-    transform: translateY(-2px);
+    border-bottom-color: #79c0ff;
+    background: linear-gradient(180deg, rgba(121, 192, 255, 0.05) 0%, transparent 100%);
 }
 .repo-select:focus { 
     outline: none; 
-    border-color: #79c0ff;
-    box-shadow: 
-        0 4px 12px rgba(255, 255, 255, 0.15),
-        0 0 20px rgba(121, 192, 255, 0.3);
+    border-bottom-color: #79c0ff;
+    box-shadow: 0 4px 12px rgba(121, 192, 255, 0.1);
 }
 
-.repo-select option { background: #ffffff; color: #0d1117; padding: 12px; }
+.repo-select option { background: #161b22; color: #ffffff; padding: 12px; }
 
-.repo-option-nft { color: #238636; }
-.repo-option-no-nft { color: #da3633; }
+.repo-option-nft { color: #3fb950; }
+.repo-option-no-nft { color: #f85149; }
 
 /* Repo status paziņojums */
 .repo-status-display {
@@ -133,129 +136,141 @@ h1 {
     letter-spacing: 0.5px;
 }
 .repo-status-display.has-nft {
-    background: #ffffff;
-    color: #238636;
+    background: linear-gradient(135deg, rgba(63, 185, 80, 0.15) 0%, rgba(46, 160, 67, 0.1) 100%);
+    color: #3fb950;
     border: 2px solid #3fb950;
     box-shadow: 
-        0 4px 12px rgba(255, 255, 255, 0.15),
-        0 0 20px rgba(63, 185, 80, 0.2);
+        0 4px 12px rgba(63, 185, 80, 0.15),
+        inset 0 1px 0 rgba(63, 185, 80, 0.1);
 }
 .repo-status-display.no-nft {
-    background: #ffffff;
-    color: #da3633;
+    background: linear-gradient(135deg, rgba(248, 81, 73, 0.15) 0%, rgba(218, 54, 51, 0.1) 100%);
+    color: #f85149;
     border: 2px solid #f85149;
     box-shadow: 
-        0 4px 12px rgba(255, 255, 255, 0.15),
-        0 0 20px rgba(248, 81, 73, 0.2);
+        0 4px 12px rgba(248, 81, 73, 0.15),
+        inset 0 1px 0 rgba(248, 81, 73, 0.1);
 }
 
-/* VISAS POGAS — BALTAS ar melnu tekstu */
+/* VISAS POGAS ar bagātīgiem gradientiem */
 button { 
     width: 100%; 
-    padding: 16px; 
-    background: #ffffff; 
-    color: #0d1117; 
-    border: 2px solid #ffffff;
+    padding: 14px; 
+    background: linear-gradient(135deg, #238636 0%, #1a7f37 50%, #238636 100%); 
+    color: #ffffff; 
+    border: 1px solid rgba(63, 185, 80, 0.3);
     border-radius: 8px; 
     font-size: 16px; 
-    font-weight: 700; 
+    font-weight: 600; 
     cursor: pointer; 
     margin-top: 16px; 
     transition: all 0.3s;
-    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
+    position: relative;
+    overflow: hidden;
+}
+
+button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: left 0.5s;
+}
+
+button:hover::before {
+    left: 100%;
 }
 
 button:hover { 
-    background: #e6edf3;
-    border-color: #e6edf3;
-    transform: translateY(-3px);
+    background: linear-gradient(135deg, #2ea043 0%, #238636 50%, #2ea043 100%); 
+    transform: translateY(-2px);
     box-shadow: 
-        0 8px 20px rgba(255, 255, 255, 0.25),
-        0 12px 32px rgba(255, 255, 255, 0.1);
-}
-
-button:active {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(255, 255, 255, 0.2);
+        0 4px 12px rgba(35, 134, 54, 0.3),
+        0 8px 24px rgba(35, 134, 54, 0.2);
+    border-color: rgba(63, 185, 80, 0.5);
 }
 
 button:disabled { 
-    background: rgba(255, 255, 255, 0.3); 
-    color: rgba(255, 255, 255, 0.7); 
+    background: linear-gradient(135deg, #30363d 0%, #21262d 50%, #30363d 100%); 
+    color: #8b949e; 
     cursor: not-allowed; 
     transform: none;
     box-shadow: none;
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: rgba(139, 148, 158, 0.2);
 }
 
 button.sign-button { padding: 20px; font-size: 20px; }
 
-/* Backup poga — BALTA ar zilu akcentu */
+/* Backup poga — TUMŠI ZILA ar bagātīgu gradientu */
 button.backup-button {
-    background: #ffffff;
-    color: #0d1117;
-    border: 3px solid #79c0ff;
+    background: linear-gradient(135deg, #1a3a5c 0%, #1e4d7b 25%, #2d6da8 50%, #1e4d7b 75%, #1a3a5c 100%);
+    color: #ffffff;
+    border: 2px solid #2d5a8e;
     box-shadow: 
-        0 4px 12px rgba(255, 255, 255, 0.15),
-        0 0 24px rgba(121, 192, 255, 0.3);
+        0 4px 12px rgba(30, 77, 123, 0.4),
+        0 8px 24px rgba(30, 77, 123, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 button.backup-button:hover {
-    background: #e6edf3;
-    border-color: #58a6ff;
-    transform: translateY(-3px);
+    background: linear-gradient(135deg, #1e4d7b 0%, #2d6da8 25%, #3a7bbd 50%, #2d6da8 75%, #1e4d7b 100%);
+    transform: translateY(-2px);
     box-shadow: 
-        0 8px 20px rgba(255, 255, 255, 0.25),
-        0 0 32px rgba(121, 192, 255, 0.4);
+        0 6px 16px rgba(30, 77, 123, 0.5),
+        0 12px 32px rgba(30, 77, 123, 0.3);
+    border-color: #3a7bbd;
 }
 
 /* Logout poga */
 button.logout-button { 
-    background: rgba(255, 255, 255, 0.1);
+    background: linear-gradient(135deg, #21262d 0%, #30363d 50%, #21262d 100%); 
     color: #ffffff; 
     padding: 10px; 
     font-size: 14px; 
     margin-top: 8px;
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.1);
 }
 button.logout-button:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: linear-gradient(135deg, #30363d 0%, #3d444d 50%, #30363d 100%);
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-/* Abonementa poga — BALTA */
+/* Abonementa poga */
 .subscription-button { 
     padding: 18px; 
     font-size: 20px; 
     font-weight: 700;
     margin-top: 8px; 
-    color: #0d1117;
+    color: #ffffff;
     letter-spacing: 0.5px;
-    background: #ffffff;
-    border: 2px solid #ffffff;
 }
 .subscription-button.active { 
-    background: #ffffff;
-    color: #0d1117;
+    background: linear-gradient(135deg, #1a7f37 0%, #238636 30%, #2ea043 50%, #238636 70%, #1a7f37 100%); 
+    color: #ffffff;
     border: 2px solid #3fb950;
     box-shadow: 
-        0 4px 12px rgba(255, 255, 255, 0.15),
-        0 0 24px rgba(63, 185, 80, 0.3);
+        0 4px 12px rgba(63, 185, 80, 0.3),
+        0 8px 24px rgba(63, 185, 80, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 .subscription-button.inactive { 
-    background: #ffffff;
-    color: #0d1117;
+    background: linear-gradient(135deg, #f85149 0%, #da3633 30%, #f85149 50%, #da3633 70%, #f85149 100%); 
+    color: #ffffff;
     border: 2px solid #f85149;
     box-shadow: 
-        0 4px 12px rgba(255, 255, 255, 0.15),
-        0 0 24px rgba(248, 81, 73, 0.3);
+        0 4px 12px rgba(248, 81, 73, 0.3),
+        0 8px 24px rgba(248, 81, 73, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 .subscription-button.inactive:hover {
-    background: #e6edf3;
-    transform: translateY(-3px);
+    background: linear-gradient(135deg, #da3633 0%, #b62324 30%, #da3633 50%, #b62324 70%, #da3633 100%);
+    transform: translateY(-2px);
     box-shadow: 
-        0 8px 20px rgba(255, 255, 255, 0.25),
-        0 0 32px rgba(248, 81, 73, 0.4);
+        0 6px 16px rgba(248, 81, 73, 0.4),
+        0 12px 32px rgba(248, 81, 73, 0.2);
 }
 
 .status { text-align: center; margin-top: 16px; font-size: 14px; color: #ffffff; white-space: pre-wrap; word-break: break-all; }
