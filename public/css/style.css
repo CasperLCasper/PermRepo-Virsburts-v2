@@ -19,7 +19,7 @@ body {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); 
 }
 
-/* Valodu izvēle — balts teksts, minimālisms */
+/* Valodu izvēle */
 .language-selector { display: flex; justify-content: center; gap: 20px; margin-bottom: 24px; }
 .lang-btn { 
     width: auto; 
@@ -118,7 +118,7 @@ h1 { font-size: 28px; margin-bottom: 8px; color: #79c0ff; text-align: center; }
     box-shadow: 0 4px 12px rgba(248, 81, 73, 0.15);
 }
 
-/* Pogas — minimālistisks gradients, ne pārāk zaļš */
+/* Pogas */
 button { 
     width: 100%; 
     padding: 14px; 
@@ -146,6 +146,20 @@ button:disabled {
 }
 button.sign-button { padding: 20px; font-size: 20px; }
 
+/* Backup poga — TUMŠI ZILA ar gradientu */
+button.backup-button {
+    background: linear-gradient(135deg, #1a3a5c 0%, #1e4d7b 50%, #1a3a5c 100%);
+    color: #ffffff;
+    border: 2px solid #2d5a8e;
+    box-shadow: 0 4px 12px rgba(30, 77, 123, 0.3);
+}
+button.backup-button:hover {
+    background: linear-gradient(135deg, #1e4d7b 0%, #2d6da8 50%, #1e4d7b 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(30, 77, 123, 0.4);
+    border-color: #3a7bbd;
+}
+
 /* Logout poga */
 button.logout-button { 
     background: linear-gradient(135deg, #21262d 0%, #30363d 100%); 
@@ -160,7 +174,7 @@ button.logout-button:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-/* Abonementa poga — izceļas */
+/* Abonementa poga */
 .subscription-button { 
     padding: 18px; 
     font-size: 20px; 
