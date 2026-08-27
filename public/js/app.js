@@ -43,8 +43,8 @@ const translations = {
         'select-repo': 'Izvēlies repozitoriju...',
         'open-backup': 'Izveidot Backupu',
         'mint-nft': 'Izveidot NFT',
-        'nft-linked': '✅ NFT piesaistīts',
-        'no-nft': '❌ Nav NFT',
+        'nft-linked': '✅ NFT ir piesaistīts šim repozitorijam',
+        'no-nft': '❌ Šim repozitorijam nav NFT',
         'subscription-active': '📅 Abonements: AKTĪVS',
         'subscription-expired': '📅 Abonements: BEIDZIES — ATJAUNOT',
         'days': 'dienas',
@@ -61,8 +61,8 @@ const translations = {
         'select-repo': 'Select repository...',
         'open-backup': 'Create Backup',
         'mint-nft': 'Mint NFT',
-        'nft-linked': '✅ NFT linked',
-        'no-nft': '❌ No NFT',
+        'nft-linked': '✅ NFT is linked to this repository',
+        'no-nft': '❌ This repository has no NFT',
         'subscription-active': '📅 Subscription: ACTIVE',
         'subscription-expired': '📅 Subscription: EXPIRED — RENEW',
         'days': 'days',
@@ -79,8 +79,8 @@ const translations = {
         'select-repo': 'Elektu deponejon...',
         'open-backup': 'Krei Sekurkopion',
         'mint-nft': 'Krei NFT',
-        'nft-linked': '✅ NFT ligita',
-        'no-nft': '❌ Neniu NFT',
+        'nft-linked': '✅ NFT estas ligita al ĉi tiu deponejo',
+        'no-nft': '❌ Ĉi tiu deponejo ne havas NFT',
         'subscription-active': '📅 Abono: AKTIVA',
         'subscription-expired': '📅 Abono: FINIĜIS — RENOVIGI',
         'days': 'tagoj',
@@ -95,25 +95,19 @@ function t(key) {
 function switchLanguage(lang) {
     currentLanguage = lang;
     
-    // Atjaunina valodu pogas
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.lang === lang);
     });
     
-    // Atjaunina visus tulkojumus
     document.querySelectorAll('[data-i18n]').forEach(el => {
         el.textContent = t(el.dataset.i18n);
     });
     
-    // Atjaunina repo izvēlni
     loadRepos();
-    
-    // Atjaunina abonementa pogu
     checkSubscription();
 }
 
 async function init() {
-    // Valodu pārslēgšana
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.onclick = () => switchLanguage(btn.dataset.lang);
     });
@@ -223,9 +217,8 @@ async function connectWallet() {
         userAddress = await signer.getAddress();
         
         document.getElementById('walletSection').style.display = 'block';
-        document.getElementById('walletAddress').textContent = userAddress.substring(0, 10) + '...';
+        document.getElementById('walletAddress').textContent = userAddress;
         
-        // Poga kļūst neaktīva
         const walletButton = document.getElementById('connectWalletButton');
         walletButton.textContent = t('wallet-connected');
         walletButton.disabled = true;
@@ -238,7 +231,6 @@ async function connectWallet() {
 
 async function loadRepos() {
     try {
-        // Ielādē repo tikai pirmajā reizē
         if (reposData.length === 0) {
             const response = await fetch('/api/github/repos');
             const data = await response.json();
@@ -299,16 +291,21 @@ async function checkRepoStatus(repoName) {
         
         const repoActions = document.getElementById('repoActions');
         const actionButton = document.getElementById('actionButton');
+        const repoStatus = document.getElementById('repoStatus');
         
         repoActions.style.display = 'block';
         
         if (tokenId !== 0n) {
+            repoStatus.textContent = t('nft-linked');
+            repoStatus.className = 'repo-status-display has-nft';
             actionButton.textContent = t('open-backup');
             actionButton.style.display = 'block';
             actionButton.onclick = () => {
                 window.location.href = `/backup.html?repo=${encodeURIComponent(repoName)}`;
             };
         } else {
+            repoStatus.textContent = t('no-nft');
+            repoStatus.className = 'repo-status-display no-nft';
             actionButton.textContent = t('mint-nft');
             actionButton.style.display = 'block';
             actionButton.onclick = () => mintNFT(repoName);
