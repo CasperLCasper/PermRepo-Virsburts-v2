@@ -11,10 +11,6 @@ let githubUser = null;
 let currentFileCostEth = '0';
 let currentManifestCostEth = '0';
 let currentNewUserCredits = '0';
-let currentFileWinc = '0';
-let currentUserCredits = '0';
-let currentZipSize = 0;
-let currentFileCount = 0;
 let masterKey = null;
 let currentUnchangedFiles = {};
 let currentPreviousHistory = [];
@@ -123,10 +119,6 @@ async function loadNFTInfo() {
     }
 }
 
-// ==================================================
-// MASTER KEY ĢENERĒŠANA
-// ==================================================
-
 async function generateMasterKey(walletAddress, repoName, tokenId, githubUser) {
     const cryptoRandom = new Uint8Array(64);
     crypto.getRandomValues(cryptoRandom);
@@ -216,10 +208,6 @@ function showMasterKey(masterKey) {
     });
 }
 
-// ==================================================
-// BACKUP PROCESS
-// ==================================================
-
 async function startBackup() {
     const button = document.getElementById('startBackupButton');
     button.disabled = true;
@@ -257,17 +245,17 @@ async function startBackup() {
         }
         
         currentFileCostEth = prepareResult.fileCostEth || '0';
+        currentManifestCostEth = prepareResult.manifestCostEth || '0';
         currentNewUserCredits = prepareResult.newUserCredits || '0';
-        currentFileWinc = prepareResult.fileWinc || '0';
-        currentUserCredits = prepareResult.userCredits || '0';
-        currentZipSize = prepareResult.estimatedZipSize || 0;
-        currentFileCount = files.length;
         currentUnchangedFiles = prepareResult.unchangedFiles || {};
         currentPreviousHistory = prepareResult.previousHistory || [];
         currentPreviousManifestId = prepareResult.previousManifestId || null;
         currentPreviousBackupNumber = prepareResult.previousBackupNumber || null;
         
-        // 2. MASTER KEY
+        // 2. UZREIZ PARĀDA INFORMĀCIJU
+        showBackupInfo(prepareResult, files);
+        
+        // 3. MASTER KEY
         const currentBackupCount = Number(prepareResult.backupCount || 0);
         
         if (currentBackupCount === 0) {
@@ -284,13 +272,9 @@ async function startBackup() {
             }
         }
         
-        // 3. PARĀDA INFORMĀCIJU
-        currentManifestCostEth = prepareResult.fileCostEth;
+        // 4. IEMAKSA
         const totalCostWei = ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth);
         
-        showBackupInfo(prepareResult, files, totalCostWei);
-        
-        // 4. IEMAKSA
         if (totalCostWei > 0n) {
             setStatus(`Iemaksā Treasury: ${ethers.formatEther(totalCostWei)} ETH...`);
             button.textContent = '⏳ Iemaksa...';
@@ -452,8 +436,10 @@ async function startBackup() {
     }
 }
 
-function showBackupInfo(prepareResult, files, totalCostWei) {
-    const totalCostEth = ethers.formatEther(totalCostWei);
+function showBackupInfo(prepareResult, files) {
+    const totalCostEth = ethers.formatEther(
+        ethers.parseEther(prepareResult.fileCostEth) + ethers.parseEther(prepareResult.manifestCostEth)
+    );
     
     const infoHtml = `
         <div style="margin: 16px 0; padding: 16px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;">
@@ -462,7 +448,7 @@ function showBackupInfo(prepareResult, files, totalCostWei) {
                 <div>📦 Failu skaits: <strong style="color: #e6edf3;">${files.length}</strong></div>
                 <div>📦 Failu izmērs: <strong style="color: #e6edf3;">${(prepareResult.totalBytes / 1024 / 1024).toFixed(2)} MB</strong></div>
                 <div>💳 Failu izmaksas: <strong style="color: #e6edf3;">${prepareResult.fileCostEth} ETH</strong></div>
-                <div>📄 Manifesta izmaksas: <strong style="color: #e6edf3;">${currentManifestCostEth} ETH</strong></div>
+                <div>📄 Manifesta izmaksas: <strong style="color: #e6edf3;">${prepareResult.manifestCostEth} ETH</strong></div>
                 <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #30363d;">
                     💎 <strong style="color: #3fb950; font-size: 16px;">KOPĀ JĀMAKSĀ: ${totalCostEth} ETH</strong>
                 </div>
@@ -472,10 +458,6 @@ function showBackupInfo(prepareResult, files, totalCostWei) {
     
     document.getElementById('status').innerHTML = infoHtml;
 }
-
-// ==================================================
-// PALĪGFUNKCIJAS
-// ==================================================
 
 async function encryptData(data, keyHex) {
     const key = keyHex.slice(2);
