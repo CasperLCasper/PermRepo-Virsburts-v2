@@ -8,6 +8,7 @@ let signer = null;
 let githubUser = null;
 let currentLanguage = 'lv';
 let reposData = [];
+let selectedRepoName = null;
 
 const NFT_ABI = [
     "function mintRepository(address recipient, string calldata repository, string calldata uri) external returns (uint256)",
@@ -92,17 +93,24 @@ function t(key) {
     return translations[currentLanguage][key] || translations.lv[key] || key;
 }
 
-function applyTranslations() {
-    document.querySelectorAll('[data-i18n]').forEach(el => {
-        el.textContent = t(el.dataset.i18n);
+function switchLanguage(lang) {
+    currentLanguage = lang;
+    
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
     });
     
-    // Atjaunina abonementa pogu
-    checkSubscription();
+    // MOMENTĀNI tulko VISU
+    applyTranslations();
     
-    // Atjaunina repo izvēlni, ja tā ir ielādēta
+    // Atjaunina repo izvēlni
     if (reposData.length > 0) {
         loadRepos();
+    }
+    
+    // Atjaunina repo statusu, ja ir izvēlēts repo
+    if (selectedRepoName) {
+        checkRepoStatus(selectedRepoName);
     }
     
     // Atjaunina maka pogu, ja maks ir savienots
@@ -112,15 +120,13 @@ function applyTranslations() {
     }
 }
 
-function switchLanguage(lang) {
-    currentLanguage = lang;
-    
-    document.querySelectorAll('.lang-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.lang === lang);
+function applyTranslations() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        el.textContent = t(el.dataset.i18n);
     });
     
-    // MOMENTĀNI tulko visu
-    applyTranslations();
+    // Atjaunina abonementa pogu
+    checkSubscription();
 }
 
 async function init() {
@@ -281,10 +287,17 @@ async function loadRepos() {
             select.appendChild(option);
         }
         
+        // Saglabā izvēlēto repo
+        if (selectedRepoName) {
+            select.value = selectedRepoName;
+        }
+        
         select.onchange = async () => {
             if (select.value) {
+                selectedRepoName = select.value;
                 await checkRepoStatus(select.value);
             } else {
+                selectedRepoName = null;
                 document.getElementById('repoActions').style.display = 'none';
             }
         };
@@ -296,6 +309,8 @@ async function loadRepos() {
 
 async function checkRepoStatus(repoName) {
     try {
+        selectedRepoName = repoName;
+        
         const fullRepoName = `${githubUser}/${repoName}`;
         const repoHash = ethers.keccak256(
             ethers.AbiCoder.defaultAbiCoder().encode(['string'], [fullRepoName])
