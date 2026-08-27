@@ -204,23 +204,23 @@ button:disabled {
 
 button.sign-button { padding: 20px; font-size: 20px; }
 
-/* Backup poga — TUMŠI ZILA ar bagātīgu gradientu */
+/* Backup poga — ZAĻA ar bagātīgu gradientu */
 button.backup-button {
-    background: linear-gradient(135deg, #1a3a5c 0%, #1e4d7b 25%, #2d6da8 50%, #1e4d7b 75%, #1a3a5c 100%);
+    background: linear-gradient(135deg, #1a7f37 0%, #238636 25%, #2ea043 50%, #238636 75%, #1a7f37 100%);
     color: #ffffff;
-    border: 2px solid #2d5a8e;
+    border: 2px solid #3fb950;
     box-shadow: 
-        0 4px 12px rgba(30, 77, 123, 0.4),
-        0 8px 24px rgba(30, 77, 123, 0.2),
+        0 4px 12px rgba(63, 185, 80, 0.4),
+        0 8px 24px rgba(63, 185, 80, 0.2),
         inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 button.backup-button:hover {
-    background: linear-gradient(135deg, #1e4d7b 0%, #2d6da8 25%, #3a7bbd 50%, #2d6da8 75%, #1e4d7b 100%);
+    background: linear-gradient(135deg, #238636 0%, #2ea043 25%, #3fb950 50%, #2ea043 75%, #238636 100%);
     transform: translateY(-2px);
     box-shadow: 
-        0 6px 16px rgba(30, 77, 123, 0.5),
-        0 12px 32px rgba(30, 77, 123, 0.3);
-    border-color: #3a7bbd;
+        0 6px 16px rgba(63, 185, 80, 0.5),
+        0 12px 32px rgba(63, 185, 80, 0.3);
+    border-color: #2ea043;
 }
 
 /* Logout poga */
