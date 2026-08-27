@@ -8,8 +8,15 @@
 </head>
 <body>
 <div class="container">
+    <!-- Valodu izvēle -->
+    <div class="language-selector">
+        <button class="lang-btn active" data-lang="lv">LV</button>
+        <button class="lang-btn" data-lang="en">EN</button>
+        <button class="lang-btn" data-lang="eo">EO</button>
+    </div>
+    
     <h1>🔒 PermRepo</h1>
-    <p class="subtitle">GitHub repo backupi uz Arweave</p>
+    <p class="subtitle" data-i18n="subtitle">GitHub repo backupi uz Arweave</p>
     
     <!-- Abonementa status -->
     <div id="subscriptionSection" style="display: none;">
@@ -18,39 +25,38 @@
     
     <!-- GitHub auth -->
     <div id="authSection" style="display: none;">
-        <button id="loginButton" class="sign-button">Savienot ar GitHub</button>
+        <button id="loginButton" class="sign-button" data-i18n="connect-github">Savienot ar GitHub</button>
     </div>
     
     <!-- User info -->
     <div id="userSection" style="display: none;">
         <div class="info-row text-left">
-            <span class="info-label">Lietotājs</span>
+            <span class="info-label" data-i18n="user">Lietotājs</span>
             <span class="info-value" id="userName">-</span>
         </div>
-        <button id="logoutButton" class="logout-button">Izrakstīties</button>
+        <button id="logoutButton" class="logout-button" data-i18n="logout">Izrakstīties</button>
     </div>
     
     <!-- Wallet -->
     <div id="walletSection" style="display: none;">
         <div class="info-row text-left">
-            <span class="info-label">Maks</span>
+            <span class="info-label" data-i18n="wallet">Maks</span>
             <span class="info-value" id="walletAddress">-</span>
         </div>
-        <button id="connectWalletButton" class="sign-button">Savienot MetaMask</button>
+        <button id="connectWalletButton" class="sign-button" data-i18n="connect-wallet">Savienot maku</button>
     </div>
     
     <!-- Repo izvēle -->
     <div id="repoSection" style="display: none;">
         <div class="info-row text-left">
-            <span class="info-label">Repozitorijs</span>
+            <span class="info-label" data-i18n="repository">Repozitorijs</span>
             <select id="repoSelect" class="repo-select">
-                <option value="">Izvēlies repozitoriju...</option>
+                <option value="" data-i18n="select-repo">Izvēlies repozitoriju...</option>
             </select>
         </div>
         
         <!-- Repo status un darbības -->
         <div id="repoActions" style="display: none;">
-            <div id="repoStatus" class="status"></div>
             <button id="actionButton" class="sign-button" style="display: none;"></button>
         </div>
     </div>
