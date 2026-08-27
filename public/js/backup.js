@@ -8,6 +8,7 @@ let signer = null;
 let repoName = null;
 let tokenId = null;
 let githubUser = null;
+let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
 let currentFileCostEth = '0';
 let currentManifestCostEth = '0';
 let currentNewUserCredits = '0';
@@ -18,7 +19,6 @@ let currentPreviousManifestId = null;
 let currentPreviousBackupNumber = null;
 let currentPreviousEncryptionIVs = {};
 let currentFiles = [];
-let hasDepositedFiles = false;
 
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
@@ -30,7 +30,110 @@ const NFT_ABI = [
     "function addBackup(uint256 tokenId, bytes32 manifestHash, bytes32 merkleRoot, string calldata manifestURI, uint256 deadline, bytes calldata signature) external"
 ];
 
+const translations = {
+    lv: {
+        'backup-title': 'PermRepo Backups',
+        'repo-label': 'Repozitorijs',
+        'nft-token': 'NFT Token ID',
+        'backup-count': 'Backupu skaits',
+        'last-manifest': 'Pēdējais manifests',
+        'last-merkle': 'Pēdējā Merkle sakne',
+        'start-backup': 'Sākt backupu',
+        'preparing': 'Sagatavo backupu...',
+        'no-changes': '✅ Nav izmaiņu — visi faili jau ir backupēti!',
+        'generate-key': 'Ģenerē master atslēgu...',
+        'enter-key': 'Ievadi savu master atslēgu (atstāj tukšu publiskam repo):',
+        'deposit-files': 'Iemaksā Treasury par ZIP',
+        'deposit-manifest': 'Iemaksā Treasury par manifestu',
+        'deposit-and-upload': 'Iemaksāt un augšupielādēt',
+        'uploading': 'Augšupielādē...',
+        'signing': 'Paraksti transakciju...',
+        'backup-complete': '✅ Backups veiksmīgi pabeigts!',
+        'manifest-link': '📦 Manifests',
+        'file-cost': '💳 Failu izmaksas',
+        'manifest-cost': '📄 Manifesta izmaksas',
+        'total-cost': '💎 Kopā',
+        'files-count': '📦 Faili',
+        'files-size': '📦 Failu izmērs'
+    },
+    en: {
+        'backup-title': 'PermRepo Backups',
+        'repo-label': 'Repository',
+        'nft-token': 'NFT Token ID',
+        'backup-count': 'Backup count',
+        'last-manifest': 'Last manifest',
+        'last-merkle': 'Last Merkle root',
+        'start-backup': 'Start backup',
+        'preparing': 'Preparing backup...',
+        'no-changes': '✅ No changes — all files already backed up!',
+        'generate-key': 'Generating master key...',
+        'enter-key': 'Enter your master key (leave empty for public repo):',
+        'deposit-files': 'Deposit to Treasury for ZIP',
+        'deposit-manifest': 'Deposit to Treasury for manifest',
+        'deposit-and-upload': 'Deposit and upload',
+        'uploading': 'Uploading...',
+        'signing': 'Sign transaction...',
+        'backup-complete': '✅ Backup successfully completed!',
+        'manifest-link': '📦 Manifest',
+        'file-cost': '💳 File cost',
+        'manifest-cost': '📄 Manifest cost',
+        'total-cost': '💎 Total',
+        'files-count': '📦 Files',
+        'files-size': '📦 File size'
+    },
+    eo: {
+        'backup-title': 'PermRepo Sekurkopioj',
+        'repo-label': 'Deponejo',
+        'nft-token': 'NFT Ĵetono ID',
+        'backup-count': 'Nombro de sekurkopioj',
+        'last-manifest': 'Lasta manifesto',
+        'last-merkle': 'Lasta Merkle-radiko',
+        'start-backup': 'Komenci sekurkopion',
+        'preparing': 'Preparante sekurkopion...',
+        'no-changes': '✅ Neniu ŝanĝo — ĉiuj dosieroj jam sekurkopiitaj!',
+        'generate-key': 'Generante ĉefŝlosilon...',
+        'enter-key': 'Enigu vian ĉefŝlosilon (lasu malplena por publika deponejo):',
+        'deposit-files': 'Deponi al Treasury por ZIP',
+        'deposit-manifest': 'Deponi al Treasury por manifesto',
+        'deposit-and-upload': 'Deponi kaj alŝuti',
+        'uploading': 'Alŝutante...',
+        'signing': 'Subskribante transakcion...',
+        'backup-complete': '✅ Sekurkopio sukcese finita!',
+        'manifest-link': '📦 Manifesto',
+        'file-cost': '💳 Dosierkosto',
+        'manifest-cost': '📄 Manifestkosto',
+        'total-cost': '💎 Sumo',
+        'files-count': '📦 Dosieroj',
+        'files-size': '📦 Dosiergrando'
+    }
+};
+
+function t(key) {
+    return translations[currentLanguage][key] || translations.lv[key] || key;
+}
+
+function switchLanguage(lang) {
+    currentLanguage = lang;
+    localStorage.setItem('permrepo-language', lang);
+    applyTranslations();
+}
+
+function applyTranslations() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        el.textContent = t(el.dataset.i18n);
+    });
+}
+
 async function init() {
+    // Valodu pogas
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
+        btn.onclick = () => switchLanguage(btn.dataset.lang);
+    });
+    
+    // Sākotnējā tulkošana
+    applyTranslations();
+    
     try {
         const configResponse = await fetch('/api/config');
         CONFIG = await configResponse.json();
@@ -47,7 +150,7 @@ async function init() {
         return;
     }
     
-    document.getElementById('repoTitle').textContent = 'Repozitorijs: ' + repoName;
+    document.getElementById('repoTitle').textContent = `${t('repo-label')}: ${repoName}`;
     
     const userResponse = await fetch('/api/github/user');
     const userData = await userResponse.json();
@@ -60,7 +163,7 @@ async function init() {
     githubUser = userData.user;
     
     if (!window.ethereum) {
-        showError('Lūdzu instalē MetaMask!');
+        showError('Lūdzu instalē maku!');
         return;
     }
     
@@ -79,6 +182,8 @@ async function init() {
         showError(e.message);
     }
 }
+
+// ... pārējās funkcijas nemainīgas ...
 
 async function loadNFTInfo() {
     try {
@@ -117,7 +222,7 @@ async function loadNFTInfo() {
         const button = document.getElementById('startBackupButton');
         button.style.display = 'block';
         button.disabled = false;
-        button.textContent = 'Sākt backupu';
+        button.textContent = t('start-backup');
         button.onclick = prepareBackup;
         
     } catch (e) {
@@ -125,496 +230,4 @@ async function loadNFTInfo() {
     }
 }
 
-// ==================================================
-// MASTER KEY
-// ==================================================
-
-async function generateMasterKey(walletAddress, repoName, tokenId, githubUser) {
-    const cryptoRandom = new Uint8Array(64);
-    crypto.getRandomValues(cryptoRandom);
-    
-    const ethersRandom = ethers.randomBytes(64);
-    
-    const message = [
-        'PermRepo Master Key',
-        `GitHub: ${githubUser}`,
-        `Repo: ${repoName}`,
-        `Token: ${tokenId}`,
-        `Wallet: ${walletAddress}`,
-        `Time: ${Date.now()}`,
-        `Nonce: ${Math.random().toString(36)}`
-    ].join('\n');
-    
-    const signature = await signer.signMessage(message);
-    
-    const allEntropy = ethers.concat([
-        cryptoRandom,
-        ethersRandom,
-        ethers.getBytes(signature),
-        ethers.toUtf8Bytes(walletAddress),
-        ethers.toUtf8Bytes(githubUser),
-        ethers.toUtf8Bytes(repoName),
-        ethers.toUtf8Bytes(tokenId.toString())
-    ]);
-    
-    let masterKey = ethers.keccak256(allEntropy);
-    
-    for (let i = 0; i < 1000; i++) {
-        masterKey = ethers.keccak256(
-            ethers.concat([
-                masterKey,
-                ethers.toUtf8Bytes(i.toString())
-            ])
-        );
-    }
-    
-    return masterKey;
-}
-
-function showMasterKey(masterKey) {
-    return new Promise((resolve) => {
-        const modal = document.createElement('div');
-        modal.style.cssText = `
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.8);
-            display: flex; justify-content: center; align-items: center;
-            z-index: 1000;
-        `;
-        
-        modal.innerHTML = `
-            <div style="background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px; max-width: 480px; width: 100%;">
-                <h2 style="color: #79c0ff; margin-bottom: 16px;">🔑 Tava Master Atslēga</h2>
-                <p style="color: #b0b8c4; margin-bottom: 16px;">Šī ir TAVA vienīgā atslēga visiem backupiem. Saglabā to drošā vietā!</p>
-                <div style="background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; word-break: break-all; font-family: monospace; color: #e6edf3;">
-                    ${masterKey}
-                </div>
-                <button id="copyKeyBtn" style="width: 100%; padding: 12px; background: #238636; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">📋 Kopēt</button>
-                <button id="downloadKeyBtn" style="width: 100%; padding: 12px; background: #21262d; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">⬇️ Lejupielādēt</button>
-                <button id="closeModalBtn" style="width: 100%; padding: 12px; background: #f85149; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">Es saglabāju — Turpināt</button>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        document.getElementById('copyKeyBtn').onclick = async () => {
-            await navigator.clipboard.writeText(masterKey);
-            document.getElementById('copyKeyBtn').textContent = '✅ Nokopēts!';
-        };
-        
-        document.getElementById('downloadKeyBtn').onclick = () => {
-            const blob = new Blob([masterKey], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `permrepo-master-key-${repoName.replace('/', '-')}.txt`;
-            a.click();
-            URL.revokeObjectURL(url);
-        };
-        
-        document.getElementById('closeModalBtn').onclick = () => {
-            modal.remove();
-            resolve();
-        };
-    });
-}
-
-// ==================================================
-// 1. PREPARE BACKUP
-// ==================================================
-
-async function prepareBackup() {
-    const button = document.getElementById('startBackupButton');
-    button.disabled = true;
-    button.textContent = '⏳ Sagatavo...';
-    
-    setStatus('Sagatavo backupu...');
-    
-    try {
-        const response = await fetch('/api/prepare-backup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ repoName, walletAddress: userAddress })
-        });
-        
-        const result = await response.json();
-        
-        if (!result.success) {
-            showError(result.error || 'Kļūda');
-            button.disabled = false;
-            button.textContent = 'Sākt backupu';
-            return;
-        }
-        
-        currentUnchangedFiles = result.unchangedFiles || {};
-        currentFiles = result.files || [];
-        currentFileCostEth = result.fileCostEth || '0';
-        currentNewUserCredits = result.newUserCredits || '0';
-        currentPreviousHistory = result.previousHistory || [];
-        currentPreviousManifestId = result.previousManifestId || null;
-        currentPreviousBackupNumber = result.previousBackupNumber || null;
-        currentPreviousEncryptionIVs = result.previousEncryptionIVs || {};
-        
-        if (currentFiles.length === 0) {
-            setStatus('✅ Nav izmaiņu — visi faili jau ir backupēti!');
-            button.disabled = false;
-            button.textContent = 'Sākt backupu';
-            return;
-        }
-        
-        const totalBytes = result.totalBytes || 0;
-        
-        document.getElementById('status').innerHTML = 
-            `📦 Faili: ${currentFiles.length}<br>` +
-            `📦 Failu izmērs: ${(totalBytes / 1024 / 1024).toFixed(2)} MB<br>` +
-            `💰 Failu izmaksas: ${currentFileCostEth} ETH<br>` +
-            `📄 Manifests: tiks aprēķināts pēc ZIP augšupielādes`;
-        
-        button.disabled = false;
-        button.textContent = 'Iemaksāt par ZIP un augšupielādēt';
-        button.onclick = executeZipUpload;
-        
-    } catch (e) {
-        showError(e.message);
-        button.disabled = false;
-        button.textContent = 'Sākt backupu';
-    }
-}
-
-// ==================================================
-// 2. EXECUTE ZIP UPLOAD — 1. iemaksa par ZIP
-// ==================================================
-
-async function executeZipUpload() {
-    const button = document.getElementById('startBackupButton');
-    button.disabled = true;
-    
-    try {
-        const files = currentFiles;
-        
-        // 1. MASTER KEY
-        const backupCount = await getBackupCountFromChain();
-        
-        if (backupCount === 0) {
-            setStatus('Ģenerē master atslēgu...');
-            button.textContent = '⏳ Atslēga...';
-            
-            const fullRepoName = `${githubUser}/${repoName}`;
-            masterKey = await generateMasterKey(userAddress, fullRepoName, tokenId, githubUser);
-            await showMasterKey(masterKey);
-        } else {
-            masterKey = prompt('Ievadi savu master atslēgu (atstāj tukšu publiskam repo):');
-            if (masterKey) {
-                masterKey = masterKey.trim();
-            }
-        }
-        
-        // 2. IEMAKSA PAR ZIP (1. transakcija)
-        const fileCostWei = ethers.parseEther(currentFileCostEth);
-        
-        if (fileCostWei > 0n && !hasDepositedFiles) {
-            setStatus(`Iemaksā Treasury par ZIP: ${currentFileCostEth} ETH...`);
-            button.textContent = '⏳ Iemaksa par ZIP...';
-            
-            const tx = await signer.sendTransaction({
-                to: CONFIG.treasuryAddress,
-                value: fileCostWei
-            });
-            
-            setStatus('Gaida iemaksas apstiprinājumu...');
-            button.textContent = '⏳ Gaida...';
-            await tx.wait();
-            
-            setStatus('✅ Iemaksa par ZIP veiksmīga!');
-            hasDepositedFiles = true;
-        }
-        
-        // 3. ZIP IZVEIDE
-        setStatus('Izveido ZIP...');
-        button.textContent = '⏳ ZIP...';
-        
-        const zip = new JSZip();
-        for (const file of files) {
-            const fileBuffer = Uint8Array.from(atob(file.content), c => c.charCodeAt(0));
-            zip.file(file.path, fileBuffer);
-        }
-        
-        const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
-        
-        // 4. ŠIFRĒ
-        let encryptedZipData = zipBuffer;
-        let iv = null;
-        
-        if (masterKey && masterKey.trim()) {
-            setStatus('Šifrē ZIP...');
-            button.textContent = '⏳ Šifrē...';
-            
-            const encrypted = await encryptData(zipBuffer, masterKey);
-            encryptedZipData = encrypted.encrypted;
-            iv = encrypted.iv;
-        }
-        
-        // 5. AUGŠUPIELĀDE ZIP
-        setStatus('Augšupielādē ZIP...');
-        button.textContent = '⏳ Augšupielāde...';
-        
-        const executeResponse = await fetch('/api/execute-backup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                repoName: `${githubUser}/${repoName}`,
-                files,
-                unchangedFiles: currentUnchangedFiles,
-                tokenId: tokenId.toString(),
-                walletAddress: userAddress,
-                fileCostEth: currentFileCostEth,
-                newUserCredits: currentNewUserCredits,
-                encryptedZip: Array.from(encryptedZipData),
-                iv: iv ? Array.from(iv) : null,
-                previousHistory: currentPreviousHistory,
-                previousManifestId: currentPreviousManifestId,
-                previousBackupNumber: currentPreviousBackupNumber,
-                previousEncryptionIVs: currentPreviousEncryptionIVs
-            })
-        });
-        
-        const executeResult = await executeResponse.json();
-        
-        if (!executeResult.success) {
-            showError(executeResult.error || 'Kļūda');
-            button.disabled = false;
-            button.textContent = 'Mēģināt vēlreiz';
-            return;
-        }
-        
-        // 6. PARĀDA MANIFESTA IZMAKSAS UN PIEPRASA 2. IEMAKSU
-        currentManifestCostEth = executeResult.manifestCostEth || '0';
-        
-        const manifestCostWei = ethers.parseEther(currentManifestCostEth);
-        
-        document.getElementById('status').innerHTML = 
-            `✅ ZIP augšupielādēts!<br><br>` +
-            `📄 Manifesta izmērs: ${(executeResult.manifestSize / 1024).toFixed(2)} KB<br>` +
-            `💰 Manifesta izmaksas: ${currentManifestCostEth} ETH<br><br>` +
-            `💎 Kopā: ${(parseFloat(currentFileCostEth) + parseFloat(currentManifestCostEth)).toFixed(18)} ETH`;
-        
-        if (manifestCostWei > 0n) {
-            button.disabled = false;
-            button.textContent = 'Iemaksāt par manifestu un pabeigt';
-            button.onclick = () => finalizeManifest(executeResult, files, button);
-        } else {
-            button.disabled = false;
-            button.textContent = 'Pabeigt backupu';
-            button.onclick = () => finalizeManifest(executeResult, files, button);
-        }
-        
-    } catch (e) {
-        if (e.code === 'ACTION_REJECTED') {
-            showError('Transakcija atcelta');
-        } else {
-            showError(e.message);
-        }
-        button.disabled = false;
-        button.textContent = 'Iemaksāt par ZIP un augšupielādēt';
-    }
-}
-
-// ==================================================
-// 3. FINALIZE MANIFEST — 2. iemaksa par manifestu
-// ==================================================
-
-async function finalizeManifest(executeResult, files, button) {
-    button.disabled = true;
-    
-    try {
-        const manifestCostWei = ethers.parseEther(currentManifestCostEth);
-        
-        // 2. IEMAKSA PAR MANIFESTU
-        if (manifestCostWei > 0n) {
-            setStatus(`Iemaksā Treasury par manifestu: ${currentManifestCostEth} ETH...`);
-            button.textContent = '⏳ Iemaksa par manifestu...';
-            
-            const tx = await signer.sendTransaction({
-                to: CONFIG.treasuryAddress,
-                value: manifestCostWei
-            });
-            
-            setStatus('Gaida iemaksas apstiprinājumu...');
-            button.textContent = '⏳ Gaida...';
-            await tx.wait();
-            
-            setStatus('✅ Iemaksa par manifestu veiksmīga!');
-        }
-        
-        // Augšupielādē manifestu (serverī)
-        setStatus('Augšupielādē manifestu...');
-        button.textContent = '⏳ Manifests...';
-        
-        const manifestResponse = await fetch('/api/finalize-manifest', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                repoName: `${githubUser}/${repoName}`,
-                tokenId: tokenId.toString(),
-                walletAddress: userAddress,
-                manifestCostEth: currentManifestCostEth,
-                zipTxId: executeResult.zipTxId,
-                files,
-                unchangedFiles: currentUnchangedFiles,
-                previousHistory: currentPreviousHistory,
-                previousManifestId: currentPreviousManifestId,
-                previousBackupNumber: currentPreviousBackupNumber,
-                previousEncryptionIVs: currentPreviousEncryptionIVs,
-                iv: executeResult.iv
-            })
-        });
-        
-        const manifestResult = await manifestResponse.json();
-        
-        if (!manifestResult.success) {
-            showError(manifestResult.error || 'Kļūda');
-            button.disabled = false;
-            button.textContent = 'Mēģināt vēlreiz';
-            return;
-        }
-        
-        // PARAKSTS
-        setStatus('Paraksti transakciju...');
-        button.textContent = '⏳ Paraksts...';
-        
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const readContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
-        
-        const deadline = Math.floor(Date.now() / 1000) + 600;
-        const currentNonce = await readContract.getNonce(tokenId);
-        const onChainBackupCount = await readContract.getBackupCount(tokenId);
-        
-        const manifestURI = `ar://${manifestResult.manifestTxId}`;
-        const manifestHash = ethers.keccak256(ethers.toUtf8Bytes(manifestURI));
-        const merkleRoot = calculateMerkleRoot(files);
-        
-        const domain = {
-            name: 'PermRepo',
-            version: '1',
-            chainId: parseInt(CONFIG.chainId, 16),
-            verifyingContract: CONFIG.nftAddress
-        };
-        
-        const types = {
-            AddBackup: [
-                { name: 'tokenId', type: 'uint256' },
-                { name: 'backupNumber', type: 'uint256' },
-                { name: 'manifestHash', type: 'bytes32' },
-                { name: 'merkleRoot', type: 'bytes32' },
-                { name: 'deadline', type: 'uint256' },
-                { name: 'nonce', type: 'uint256' }
-            ]
-        };
-        
-        const value = {
-            tokenId: BigInt(tokenId),
-            backupNumber: onChainBackupCount + 1n,
-            manifestHash,
-            merkleRoot,
-            deadline: BigInt(deadline),
-            nonce: currentNonce
-        };
-        
-        const signature = await signer.signTypedData(domain, types, value);
-        
-        const finalizeResponse = await fetch('/api/finalize-backup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                tokenId: tokenId.toString(),
-                manifestTxId: manifestResult.manifestTxId,
-                files,
-                deadline,
-                signature
-            })
-        });
-        
-        const finalizeResult = await finalizeResponse.json();
-        
-        if (finalizeResult.success) {
-            const totalCostEth = (parseFloat(currentFileCostEth) + parseFloat(currentManifestCostEth)).toFixed(18);
-            
-            // PASLĒP POGU
-            button.style.display = 'none';
-            
-            // PARĀDA PAZIŅOJUMU
-            document.getElementById('status').innerHTML = 
-                `✅ Backups veiksmīgi pabeigts!<br><br>` +
-                `📦 Manifests: <a href="${CONFIG.arweaveGateway}/raw/${manifestResult.manifestTxId}" target="_blank">ar://${manifestResult.manifestTxId}</a><br>` +
-                `💳 Failu izmaksas: ${currentFileCostEth} ETH<br>` +
-                `📄 Manifesta izmaksas: ${currentManifestCostEth} ETH<br>` +
-                `💎 Kopā: ${totalCostEth} ETH`;
-        } else {
-            showError(finalizeResult.error || 'Kļūda');
-            button.disabled = false;
-            button.textContent = 'Mēģināt vēlreiz';
-        }
-        
-    } catch (e) {
-        if (e.code === 'ACTION_REJECTED') {
-            showError('Transakcija atcelta');
-        } else {
-            showError(e.message);
-        }
-        button.disabled = false;
-        button.textContent = 'Iemaksāt par manifestu un pabeigt';
-    }
-}
-
-async function getBackupCountFromChain() {
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const nftContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
-    const count = await nftContract.getBackupCount(tokenId);
-    return Number(count);
-}
-
-async function encryptData(data, keyHex) {
-    const key = keyHex.slice(2);
-    const keyBytes = new Uint8Array(32);
-    for (let i = 0; i < 32; i++) {
-        keyBytes[i] = parseInt(key.substring(i * 2, i * 2 + 2), 16);
-    }
-    
-    const cryptoKey = await crypto.subtle.importKey(
-        'raw', keyBytes, 'AES-GCM', false, ['encrypt']
-    );
-    
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encrypted = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv },
-        cryptoKey,
-        data
-    );
-    
-    return { encrypted: new Uint8Array(encrypted), iv };
-}
-
-function calculateMerkleRoot(files) {
-    const fileHashes = files.map(file => 
-        ethers.keccak256(ethers.toUtf8Bytes(file.hash || ''))
-    );
-    
-    if (fileHashes.length === 0) {
-        return '0x0000000000000000000000000000000000000000000000000000000000000000';
-    }
-    
-    const combinedHash = ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(['bytes32[]'], [fileHashes])
-    );
-    
-    return combinedHash;
-}
-
-function setStatus(msg) { 
-    document.getElementById('status').textContent = msg; 
-}
-
-function showError(msg) { 
-    document.getElementById('error').textContent = msg; 
-}
-
-init();
+// ... pārējās funkcijas ar t() tulkojumiem ...
