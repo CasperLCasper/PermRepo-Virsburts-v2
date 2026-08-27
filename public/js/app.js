@@ -6,7 +6,7 @@ let CONFIG = {};
 let userAddress = null;
 let signer = null;
 let githubUser = null;
-let currentLanguage = 'lv';
+let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
 let reposData = [];
 let selectedRepoName = null;
 
@@ -91,6 +91,7 @@ function t(key) {
 
 function switchLanguage(lang) {
     currentLanguage = lang;
+    localStorage.setItem('permrepo-language', lang);
     
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.lang === lang);
@@ -121,9 +122,14 @@ function applyTranslations() {
 }
 
 async function init() {
+    // Valodu pogas — atzīmē aktīvo
     document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
         btn.onclick = () => switchLanguage(btn.dataset.lang);
     });
+    
+    // Sākotnējā tulkošana
+    applyTranslations();
     
     try {
         const configResponse = await fetch('/api/config');
