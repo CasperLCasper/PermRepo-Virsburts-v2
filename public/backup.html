@@ -8,30 +8,37 @@
 </head>
 <body>
 <div class="container">
+    <!-- Valodu izvēle -->
+    <div class="language-selector">
+        <button class="lang-btn" data-lang="lv">LV</button>
+        <button class="lang-btn" data-lang="en">EN</button>
+        <button class="lang-btn" data-lang="eo">EO</button>
+    </div>
+    
     <h1>📦 PermRepo Backups</h1>
     <p class="subtitle" id="repoTitle">Repozitorijs: -</p>
     
     <div class="info-row text-left">
-        <span class="info-label">NFT Token ID</span>
+        <span class="info-label" data-i18n="nft-token">NFT Token ID</span>
         <span class="info-value" id="nftTokenId">-</span>
     </div>
     
     <div class="info-row text-left">
-        <span class="info-label">Backupu skaits</span>
+        <span class="info-label" data-i18n="backup-count">Backupu skaits</span>
         <span class="info-value" id="backupCount">-</span>
     </div>
     
     <div class="info-row text-left">
-        <span class="info-label">Pēdējais manifests</span>
+        <span class="info-label" data-i18n="last-manifest">Pēdējais manifests</span>
         <span class="info-value" id="lastManifest">-</span>
     </div>
     
     <div class="info-row text-left">
-        <span class="info-label">Pēdējā Merkle sakne</span>
+        <span class="info-label" data-i18n="last-merkle">Pēdējā Merkle sakne</span>
         <span class="info-value" id="lastMerkleRoot">-</span>
     </div>
     
-    <button id="startBackupButton" class="sign-button" disabled>Sākt backupu</button>
+    <button id="startBackupButton" class="sign-button backup-button" data-i18n="start-backup" disabled>Sākt backupu</button>
     
     <div class="status" id="status"></div>
     <div class="error" id="error"></div>
