@@ -16,6 +16,7 @@ let currentUnchangedFiles = {};
 let currentPreviousHistory = [];
 let currentPreviousManifestId = null;
 let currentPreviousBackupNumber = null;
+let currentPreviousEncryptionIVs = {};
 let currentFiles = [];
 
 const NFT_ABI = [
@@ -248,6 +249,7 @@ async function prepareBackup() {
         currentPreviousHistory = result.previousHistory || [];
         currentPreviousManifestId = result.previousManifestId || null;
         currentPreviousBackupNumber = result.previousBackupNumber || null;
+        currentPreviousEncryptionIVs = result.previousEncryptionIVs || {};
         
         if (currentFiles.length === 0) {
             setStatus('✅ Nav izmaiņu — visi faili jau ir backupēti!');
@@ -281,7 +283,7 @@ async function prepareBackup() {
 }
 
 // ==================================================
-// 2. EXECUTE BACKUP — iemaksa, ZIP, šifrēšana, augšupielāde
+// 2. EXECUTE BACKUP
 // ==================================================
 
 async function executeBackup() {
@@ -292,7 +294,7 @@ async function executeBackup() {
         const files = currentFiles;
         
         // 1. MASTER KEY
-        const backupCount = Number(button.dataset.backupCount || await getBackupCountFromChain());
+        const backupCount = await getBackupCountFromChain();
         
         if (backupCount === 0) {
             setStatus('Ģenerē master atslēgu...');
@@ -372,7 +374,8 @@ async function executeBackup() {
                 iv: iv ? Array.from(iv) : null,
                 previousHistory: currentPreviousHistory,
                 previousManifestId: currentPreviousManifestId,
-                previousBackupNumber: currentPreviousBackupNumber
+                previousBackupNumber: currentPreviousBackupNumber,
+                previousEncryptionIVs: currentPreviousEncryptionIVs
             })
         });
         
