@@ -6,51 +6,225 @@
     <title>PermRepo — Atjaunošana</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .container { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 40px; max-width: 640px; width: 100%; }
-        h1 { text-align: center; color: #79c0ff; margin-bottom: 8px; font-size: 24px; }
-        .subtitle { text-align: center; color: #b0b8c4; margin-bottom: 24px; font-size: 14px; }
-        .info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #21262d; }
-        .info-label { color: #b0b8c4; }
-        .info-value { font-weight: 600; font-size: 14px; word-break: break-all; }
-        input, textarea { width: 100%; padding: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; color: #e6edf3; font-size: 16px; margin-top: 8px; margin-bottom: 16px; }
-        input:focus, textarea:focus { outline: none; border-color: #58a6ff; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            background: linear-gradient(135deg, #0d1117 0%, #161b22 30%, #1a1e24 60%, #0d1117 100%); 
+            color: #e6edf3; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            padding: 20px;
+        }
+
+        .container { 
+            background: linear-gradient(180deg, #1a1e24 0%, #161b22 40%, #1c2128 70%, #161b22 100%); 
+            border: 1px solid #30363d; 
+            border-radius: 16px; 
+            padding: 40px; 
+            max-width: 640px; 
+            width: 100%; 
+            box-shadow: 
+                0 8px 32px rgba(0, 0, 0, 0.3),
+                0 2px 8px rgba(0, 0, 0, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .language-selector { display: flex; justify-content: center; gap: 20px; margin-bottom: 24px; }
+        .lang-btn { 
+            width: auto; 
+            padding: 8px 16px; 
+            background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%); 
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: #ffffff; 
+            font-size: 18px; 
+            font-weight: 600;
+            cursor: pointer; 
+            margin: 0; 
+            transition: all 0.3s ease; 
+            position: relative;
+            letter-spacing: 1px;
+        }
+        .lang-btn:hover { 
+            color: #79c0ff; 
+            transform: scale(1.15);
+            background: linear-gradient(180deg, rgba(121, 192, 255, 0.1) 0%, rgba(121, 192, 255, 0.05) 100%);
+            border-color: rgba(121, 192, 255, 0.3);
+            box-shadow: 0 2px 8px rgba(121, 192, 255, 0.15);
+        }
+        .lang-btn.active { 
+            color: #79c0ff; 
+            font-weight: 700;
+            background: linear-gradient(180deg, rgba(121, 192, 255, 0.15) 0%, rgba(121, 192, 255, 0.05) 100%);
+            border-color: rgba(121, 192, 255, 0.4);
+        }
+        .lang-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #79c0ff, transparent);
+            border-radius: 1px;
+        }
+
+        h1 { 
+            font-size: 32px; 
+            margin-bottom: 8px; 
+            background: linear-gradient(135deg, #79c0ff 0%, #a5d6ff 50%, #79c0ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-align: center; 
+        }
+        .subtitle { color: #ffffff; margin-bottom: 24px; font-size: 16px; text-align: center; }
+
+        .info-row { 
+            display: flex; 
+            justify-content: space-between; 
+            padding: 16px 0; 
+            border-bottom: 1px solid #30363d;
+            margin-bottom: 8px;
+        }
+        .info-row.text-left { 
+            text-align: left; 
+            flex-direction: column; 
+            gap: 8px; 
+            border-bottom: 1px solid #30363d;
+            margin-bottom: 8px;
+        }
+        .info-label { 
+            color: #8b949e; 
+            font-size: 14px; 
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-value { 
+            font-weight: 600; 
+            font-size: 16px; 
+            word-break: break-all; 
+            color: #ffffff;
+            padding: 4px 0;
+        }
+
+        input, textarea { 
+            width: 100%; 
+            padding: 14px; 
+            background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
+            border: none;
+            border-bottom: 2px solid #30363d;
+            color: #ffffff; 
+            font-size: 16px; 
+            margin-top: 8px; 
+            margin-bottom: 16px;
+            transition: all 0.3s;
+        }
+        input:focus, textarea:focus { 
+            outline: none; 
+            border-bottom-color: #79c0ff;
+            box-shadow: 0 4px 12px rgba(121, 192, 255, 0.1);
+        }
+        input::placeholder, textarea::placeholder { color: #8b949e; }
         textarea { min-height: 80px; resize: vertical; font-family: monospace; font-size: 14px; }
-        button { width: 100%; padding: 14px; background: #238636; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 12px; transition: background 0.2s; }
-        button:hover { background: #2ea043; }
-        button:disabled { background: #21262d; color: #8b949e; cursor: not-allowed; }
+
+        button { 
+            width: 100%; 
+            padding: 14px; 
+            background: linear-gradient(135deg, #238636 0%, #1a7f37 50%, #238636 100%); 
+            color: #ffffff; 
+            border: 1px solid rgba(63, 185, 80, 0.3);
+            border-radius: 8px; 
+            font-size: 16px; 
+            font-weight: 600; 
+            cursor: pointer; 
+            margin-top: 16px; 
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.5s;
+        }
+        button:hover::before { left: 100%; }
+        button:hover { 
+            background: linear-gradient(135deg, #2ea043 0%, #238636 50%, #2ea043 100%); 
+            transform: translateY(-2px);
+            box-shadow: 
+                0 4px 12px rgba(35, 134, 54, 0.3),
+                0 8px 24px rgba(35, 134, 54, 0.2);
+            border-color: rgba(63, 185, 80, 0.5);
+        }
+        button:disabled { 
+            background: linear-gradient(135deg, #30363d 0%, #21262d 50%, #30363d 100%); 
+            color: #8b949e; 
+            cursor: not-allowed; 
+            transform: none;
+            box-shadow: none;
+            border-color: rgba(139, 148, 158, 0.2);
+        }
+
         .progress { width: 100%; height: 20px; background: #21262d; border-radius: 10px; margin: 16px 0; overflow: hidden; display: none; }
-        .progress-bar { height: 100%; background: #238636; transition: width 0.3s; }
-        .status { text-align: center; margin-top: 16px; font-size: 14px; color: #b0b8c4; white-space: pre-wrap; word-break: break-all; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #238636, #2ea043); transition: width 0.3s; }
+
+        .status { text-align: center; margin-top: 16px; font-size: 14px; color: #ffffff; white-space: pre-wrap; word-break: break-all; }
         .error { color: #f85149; margin-top: 12px; text-align: center; font-size: 14px; }
         .success { color: #3fb950; margin-top: 12px; text-align: center; font-size: 14px; }
-        .debug-info { margin: 12px 0; padding: 10px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; font-size: 12px; max-height: 200px; overflow-y: auto; display: none; color: #8b949e; }
+        .debug-info { 
+            margin: 12px 0; 
+            padding: 10px; 
+            background: #0d1117; 
+            border: 1px solid #30363d; 
+            border-radius: 8px; 
+            font-size: 12px; 
+            max-height: 200px; 
+            overflow-y: auto; 
+            display: none; 
+            color: #8b949e; 
+        }
         a { color: #79c0ff; text-decoration: none; }
         a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🔓 PermRepo Atjaunošana</h1>
-        <p class="subtitle">Atjauno GitHub repo no Arweave — bez servera!</p>
+        <!-- Valodu izvēle -->
+        <div class="language-selector">
+            <button class="lang-btn" data-lang="lv">LV</button>
+            <button class="lang-btn" data-lang="en">EN</button>
+            <button class="lang-btn" data-lang="eo">EO</button>
+        </div>
+        
+        <h1 data-i18n="restore-title">🔓 PermRepo Atjaunošana</h1>
+        <p class="subtitle" data-i18n="restore-subtitle">Atjauno GitHub repo no Arweave — bez servera!</p>
         
         <div class="info-row">
-            <span class="info-label">Arweave manifests (TX ID vai ar://)</span>
+            <span class="info-label" data-i18n="manifest-label">Arweave manifests</span>
         </div>
-        <input type="text" id="manifestInput" placeholder="Piem.: ar://ABC123... vai https://ar-io.dev/raw/ABC123...">
+        <input type="text" id="manifestInput" data-i18n-placeholder="manifest-placeholder" placeholder="ar://ABC123... vai https://ar-io.dev/raw/ABC123...">
         
         <div class="info-row">
-            <span class="info-label">Master atslēga</span>
+            <span class="info-label" data-i18n="master-key-label">Master atslēga</span>
         </div>
-        <textarea id="masterKeyInput" placeholder="Ievadi savu master atslēgu..."></textarea>
+        <textarea id="masterKeyInput" data-i18n-placeholder="master-key-placeholder" placeholder="Ievadi savu master atslēgu..."></textarea>
         
         <div class="info-row">
-            <span class="info-label">Savienotais maks</span>
-            <span class="info-value" id="walletStatus">Nav savienots</span>
+            <span class="info-label" data-i18n="wallet-label">Savienotais maks</span>
+            <span class="info-value" id="walletStatus" data-i18n="wallet-not-connected">Nav savienots</span>
         </div>
-        <button id="connectWalletBtn" onclick="connectWallet()">🔌 Savienot MetaMask</button>
+        <button id="connectWalletBtn" onclick="connectWallet()" data-i18n="connect-wallet">🔌 Savienot maku</button>
         
-        <button id="restoreBtn" onclick="restoreRepo()" disabled>📥 Atjaunot repozitoriju</button>
+        <button id="restoreBtn" onclick="restoreRepo()" data-i18n="restore-btn" disabled>📥 Atjaunot repozitoriju</button>
         
         <div class="progress" id="progress">
             <div class="progress-bar" id="progressBar" style="width: 0%"></div>
@@ -73,6 +247,119 @@
         
         let userAddress = null;
         let signer = null;
+        let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
+        
+        const translations = {
+            lv: {
+                'restore-title': '🔓 PermRepo Atjaunošana',
+                'restore-subtitle': 'Atjauno GitHub repo no Arweave — bez servera!',
+                'manifest-label': 'Arweave manifests',
+                'manifest-placeholder': 'ar://ABC123... vai https://ar-io.dev/raw/ABC123...',
+                'master-key-label': 'Master atslēga',
+                'master-key-placeholder': 'Ievadi savu master atslēgu...',
+                'wallet-label': 'Savienotais maks',
+                'wallet-not-connected': 'Nav savienots',
+                'wallet-connected': 'Savienots',
+                'connect-wallet': '🔌 Savienot maku',
+                'restore-btn': '📥 Atjaunot repozitoriju',
+                'download-manifest': '📥 Lejupielādē manifestu...',
+                'download-zip': '📦 Lejupielādē ZIP arhīvu...',
+                'decrypting': '🔓 Atšifrē ZIP...',
+                'extracting': '📂 Izvelk failus...',
+                'creating-zip': '📦 Veido ZIP ar',
+                'restore-complete': '✅ Repozitorijs atjaunots!',
+                'enter-manifest': '❌ Ievadi manifesta TX ID vai ar:// saiti!',
+                'connect-first': '❌ Vispirms savieno maku!',
+                'enter-master-key': 'Ievadi master atslēgu!',
+                'invalid-manifest': 'Nederīgs manifests!',
+                'no-zip': 'Manifestā nav ZIP ID!',
+                'fetch-error': 'Neizdevās lejupielādēt no Arweave',
+                'files-restored': 'Faili',
+                'zip-archives': 'ZIP arhīvi',
+                'error': '❌ Kļūda'
+            },
+            en: {
+                'restore-title': '🔓 PermRepo Restore',
+                'restore-subtitle': 'Restore GitHub repo from Arweave — no server!',
+                'manifest-label': 'Arweave manifest',
+                'manifest-placeholder': 'ar://ABC123... or https://ar-io.dev/raw/ABC123...',
+                'master-key-label': 'Master key',
+                'master-key-placeholder': 'Enter your master key...',
+                'wallet-label': 'Connected wallet',
+                'wallet-not-connected': 'Not connected',
+                'wallet-connected': 'Connected',
+                'connect-wallet': '🔌 Connect wallet',
+                'restore-btn': '📥 Restore repository',
+                'download-manifest': '📥 Downloading manifest...',
+                'download-zip': '📦 Downloading ZIP archive...',
+                'decrypting': '🔓 Decrypting ZIP...',
+                'extracting': '📂 Extracting files...',
+                'creating-zip': '📦 Creating ZIP with',
+                'restore-complete': '✅ Repository restored!',
+                'enter-manifest': '❌ Enter manifest TX ID or ar:// link!',
+                'connect-first': '❌ Connect wallet first!',
+                'enter-master-key': 'Enter master key!',
+                'invalid-manifest': 'Invalid manifest!',
+                'no-zip': 'No ZIP ID in manifest!',
+                'fetch-error': 'Failed to download from Arweave',
+                'files-restored': 'Files',
+                'zip-archives': 'ZIP archives',
+                'error': '❌ Error'
+            },
+            eo: {
+                'restore-title': '🔓 PermRepo Restarigo',
+                'restore-subtitle': 'Restarigu GitHub-deponejon el Arweave — sen servilo!',
+                'manifest-label': 'Arweave-manifesto',
+                'manifest-placeholder': 'ar://ABC123... aŭ https://ar-io.dev/raw/ABC123...',
+                'master-key-label': 'Ĉefŝlosilo',
+                'master-key-placeholder': 'Enigu vian ĉefŝlosilon...',
+                'wallet-label': 'Konektita monujo',
+                'wallet-not-connected': 'Ne konektita',
+                'wallet-connected': 'Konektita',
+                'connect-wallet': '🔌 Konekti monujon',
+                'restore-btn': '📥 Restarigi deponejon',
+                'download-manifest': '📥 Elŝutante manifeston...',
+                'download-zip': '📦 Elŝutante ZIP-arkivon...',
+                'decrypting': '🔓 Malĉifrante ZIP...',
+                'extracting': '📂 Eltirante dosierojn...',
+                'creating-zip': '📦 Kreante ZIP kun',
+                'restore-complete': '✅ Deponejo restarigita!',
+                'enter-manifest': '❌ Enigu manifestan TX-ID aŭ ar:// ligilon!',
+                'connect-first': '❌ Unue konektu monujon!',
+                'enter-master-key': 'Enigu ĉefŝlosilon!',
+                'invalid-manifest': 'Nevalida manifesto!',
+                'no-zip': 'Neniu ZIP-ID en manifesto!',
+                'fetch-error': 'Ne sukcesis elŝuti el Arweave',
+                'files-restored': 'Dosieroj',
+                'zip-archives': 'ZIP-arkivaj',
+                'error': '❌ Eraro'
+            }
+        };
+        
+        function t(key) {
+            return translations[currentLanguage][key] || translations.lv[key] || key;
+        }
+        
+        function switchLanguage(lang) {
+            currentLanguage = lang;
+            localStorage.setItem('permrepo-language', lang);
+            
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.lang === lang);
+            });
+            
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.textContent = t(el.dataset.i18n);
+            });
+            
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                el.placeholder = t(el.dataset.i18nPlaceholder);
+            });
+            
+            if (userAddress) {
+                document.getElementById('walletStatus').textContent = `${t('wallet-connected')}: ${userAddress.substring(0, 10)}...`;
+            }
+        }
         
         function showStatus(msg, type = 'status') {
             const el = document.getElementById('status');
@@ -98,7 +385,7 @@
         
         async function fetchFromArweave(txId, gatewayIndex = 0) {
             if (gatewayIndex >= GATEWAYS.length) {
-                throw new Error('Neizdevās lejupielādēt no Arweave');
+                throw new Error(t('fetch-error'));
             }
             
             const gateway = GATEWAYS[gatewayIndex];
@@ -122,7 +409,7 @@
         
         async function connectWallet() {
             if (!window.ethereum) {
-                showStatus('❌ Lūdzu instalē MetaMask!', 'error');
+                showStatus('❌ Lūdzu instalē maku!', 'error');
                 return;
             }
             
@@ -131,19 +418,19 @@
                 signer = await provider.getSigner();
                 userAddress = await signer.getAddress();
                 
-                document.getElementById('walletStatus').textContent = userAddress.substring(0, 10) + '...';
+                document.getElementById('walletStatus').textContent = `${t('wallet-connected')}: ${userAddress.substring(0, 10)}...`;
                 document.getElementById('restoreBtn').disabled = false;
                 
-                showStatus('✅ Maks savienots!', 'success');
+                showStatus('✅', 'success');
             } catch (e) {
-                showStatus('❌ Kļūda savienojot: ' + e.message, 'error');
+                showStatus('❌ ' + e.message, 'error');
             }
         }
         
         function getMasterKeyFromInput() {
             const input = document.getElementById('masterKeyInput').value.trim();
             if (!input) {
-                throw new Error('Ievadi master atslēgu!');
+                throw new Error(t('enter-master-key'));
             }
             
             if (input.startsWith('0x')) {
@@ -184,16 +471,15 @@
             const masterKey = getMasterKeyFromInput();
             
             if (!manifestInput) {
-                showStatus('❌ Ievadi manifesta TX ID vai ar:// saiti!', 'error');
+                showStatus(t('enter-manifest'), 'error');
                 return;
             }
             
             if (!signer) {
-                showStatus('❌ Vispirms savieno MetaMask!', 'error');
+                showStatus(t('connect-first'), 'error');
                 return;
             }
             
-            // 1. Izgūst manifesta TX ID
             let manifestTxId = manifestInput;
             if (manifestInput.startsWith('ar://')) {
                 manifestTxId = manifestInput.slice(5);
@@ -207,34 +493,26 @@
             
             const button = document.getElementById('restoreBtn');
             button.disabled = true;
-            button.textContent = '⏳ Atjauno...';
+            button.textContent = '⏳';
             
             document.getElementById('debugInfo').innerHTML = '';
             document.getElementById('debugInfo').style.display = 'none';
             
             try {
-                // 2. Lejupielādē pēdējo manifestu
-                showStatus('📥 Lejupielādē manifestu...', 'status');
+                showStatus(t('download-manifest'), 'status');
                 showProgress(5);
                 
                 const manifestBuffer = await fetchFromArweave(manifestTxId);
                 const manifestText = new TextDecoder().decode(manifestBuffer);
-                showDebug('Manifests (pirmie 500 simboli): ' + manifestText.substring(0, 500));
+                showDebug('Manifests: ' + manifestText.substring(0, 500));
                 
                 const manifest = JSON.parse(manifestText);
                 
                 if (!manifest.paths) {
-                    throw new Error('Nederīgs manifests!');
+                    throw new Error(t('invalid-manifest'));
                 }
                 
-                showDebug('Failu skaits paths: ' + Object.keys(manifest.paths).length);
-                showDebug('Backup numurs: ' + manifest.metadata?.backupNumber);
-                
-                // 3. Iegūst IV vēsturi
                 const encryptionIVs = manifest.encryption?.ivs || {};
-                showDebug('IV vēstures ieraksti: ' + Object.keys(encryptionIVs).length);
-                
-                // 4. Savāc visus unikālos ZIP ID
                 const zipIds = new Set();
                 const fileZipMap = {};
                 
@@ -246,9 +524,6 @@
                     }
                 }
                 
-                showDebug('Unikālie ZIP faili: ' + zipIds.size);
-                
-                // 5. Lejupielādē un atšifrē katru ZIP ar ATBILSTOŠO IV
                 showStatus(`📦 Lejupielādē ${zipIds.size} ZIP arhīvus...`, 'status');
                 showProgress(20);
                 
@@ -256,25 +531,19 @@
                 let zipIndex = 0;
                 
                 for (const zipId of zipIds) {
-                    showDebug(`Lejupielādē ZIP: ${zipId}`);
-                    
                     const zipBuffer = await fetchFromArweave(zipId);
                     
                     let decryptedZipBuffer = zipBuffer;
-                    
-                    // Atrod IV šim ZIP no ivs vēstures
                     const iv = encryptionIVs[zipId];
                     
                     if (iv && Array.isArray(iv) && iv.length === 12) {
                         try {
                             decryptedZipBuffer = await decryptData(zipBuffer, iv, masterKey);
-                            showDebug(`✅ ZIP atšifrēts ar IV: ${zipId}`);
+                            showDebug(`✅ ZIP atšifrēts: ${zipId}`);
                         } catch (e) {
                             showDebug(`⚠️ Neizdevās atšifrēt ${zipId}: ${e.message}`);
                             decryptedZipBuffer = zipBuffer;
                         }
-                    } else {
-                        showDebug(`ZIP nav šifrēts vai nav IV: ${zipId}`);
                     }
                     
                     try {
@@ -289,15 +558,13 @@
                     showProgress(20 + (zipIndex / zipIds.size) * 40);
                 }
                 
-                // 6. Izvelk failus
-                showStatus('📂 Izvelk failus...', 'status');
+                showStatus(t('extracting'), 'status');
                 showProgress(60);
                 
                 const finalFiles = {};
                 
                 for (const [filePath, zipId] of Object.entries(fileZipMap)) {
                     const zip = zipContents[zipId];
-                    
                     if (!zip) continue;
                     
                     let fileData = null;
@@ -309,7 +576,6 @@
                         const matchingFile = Object.values(zip.files).find(f => 
                             f.name === fileName || f.name.endsWith('/' + fileName)
                         );
-                        
                         if (matchingFile && !matchingFile.dir) {
                             fileData = await matchingFile.async('uint8array');
                         }
@@ -317,16 +583,10 @@
                     
                     if (fileData) {
                         finalFiles[filePath] = fileData;
-                        showDebug(`✅ Atjaunots: ${filePath}`);
-                    } else {
-                        showDebug(`❌ Nav atrasts ZIP: ${filePath}`);
                     }
                 }
                 
-                showDebug('Kopā atjaunoti faili: ' + Object.keys(finalFiles).length);
-                
-                // 7. Galīgais ZIP
-                showStatus(`📦 Veido ZIP ar ${Object.keys(finalFiles).length} failiem...`, 'status');
+                showStatus(`${t('creating-zip')} ${Object.keys(finalFiles).length} failiem...`, 'status');
                 showProgress(80);
                 
                 const finalZip = new JSZip();
@@ -347,17 +607,31 @@
                 URL.revokeObjectURL(url);
                 
                 hideProgress();
-                showStatus(`✅ Repozitorijs atjaunots!\nFaili: ${Object.keys(finalFiles).length}\nZIP arhīvi: ${zipIds.size}`, 'success');
+                showStatus(`${t('restore-complete')}\n${t('files-restored')}: ${Object.keys(finalFiles).length}\n${t('zip-archives')}: ${zipIds.size}`, 'success');
                 
             } catch (e) {
                 console.error('Kļūda:', e);
                 hideProgress();
-                showStatus('❌ Kļūda: ' + e.message, 'error');
+                showStatus(`${t('error')}: ${e.message}`, 'error');
             } finally {
                 button.disabled = false;
-                button.textContent = '📥 Atjaunot repozitoriju';
+                button.textContent = t('restore-btn');
             }
         }
+        
+        // Inicializācija
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
+            btn.onclick = () => switchLanguage(btn.dataset.lang);
+        });
+        
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            el.textContent = t(el.dataset.i18n);
+        });
+        
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+            el.placeholder = t(el.dataset.i18nPlaceholder);
+        });
         
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
