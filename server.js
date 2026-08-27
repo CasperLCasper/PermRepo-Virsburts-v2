@@ -360,7 +360,7 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 }
 
 // ==================================================
-// PREPARE BACKUP — ar manifesta izmaksu aprēķinu
+// PREPARE BACKUP
 // ==================================================
 
 app.post('/api/prepare-backup', async (req, res) => {
@@ -413,6 +413,7 @@ app.post('/api/prepare-backup', async (req, res) => {
         let previousHistory = [];
         let previousManifestId = null;
         let previousBackupNumber = null;
+        let previousEncryptionIVs = {};
         
         if (backupCount > 0) {
             const manifestURI = await nftContract.getManifestURI(tokenId);
@@ -428,6 +429,7 @@ app.post('/api/prepare-backup', async (req, res) => {
                         if (previousManifest.paths) previousPaths = previousManifest.paths;
                         if (previousManifest.history) previousHistory = previousManifest.history;
                         if (previousManifest.metadata && previousManifest.metadata.backupNumber) previousBackupNumber = previousManifest.metadata.backupNumber;
+                        if (previousManifest.encryption && previousManifest.encryption.ivs) previousEncryptionIVs = previousManifest.encryption.ivs;
                     }
                 } catch (e) {
                     logWarning('Neizdevās iegūt iepriekšējo manifestu: ' + errorMessage(e));
@@ -464,7 +466,6 @@ app.post('/api/prepare-backup', async (req, res) => {
                 unchangedFiles,
                 fileCount: 0,
                 totalBytes: 0,
-                fileWinc: '0',
                 fileCostEth: '0',
                 manifestCostEth: '0',
                 hasPreviousBackup: backupCount > 0,
@@ -473,7 +474,7 @@ app.post('/api/prepare-backup', async (req, res) => {
             });
         }
         
-        // 6. Izmaksas — faili
+        // 6. Izmaksas
         const totalFileBytes = changedFiles.reduce((sum, file) => sum + file.size, 0);
         const estimatedZipSize = Math.ceil(totalFileBytes * 1.1);
         
@@ -481,7 +482,6 @@ app.post('/api/prepare-backup', async (req, res) => {
         const { totalWinc: fileWinc } = await getWincForBytes(turbo, [estimatedZipSize]);
         const fileCostEth = await getEthForBytes(turbo, estimatedZipSize);
         
-        // 7. Izmaksas — manifests (aptuveni 1-2 KB)
         const estimatedManifestSize = 2048;
         const { totalWinc: manifestWinc } = await getWincForBytes(turbo, [estimatedManifestSize]);
         const manifestCostEth = await getEthForBytes(turbo, estimatedManifestSize);
@@ -498,11 +498,9 @@ app.post('/api/prepare-backup', async (req, res) => {
         logInfo('Failu skaits', changedFiles.length);
         logInfo('Failu izmērs', totalFileBytes + ' bytes');
         logInfo('ZIP izmērs (aptuveni)', estimatedZipSize + ' bytes');
-        logInfo('Manifesta izmērs (aptuveni)', estimatedManifestSize + ' bytes');
         logInfo('Failu izmaksas', fileCostEth + ' ETH');
         logInfo('Manifesta izmaksas', manifestCostEth + ' ETH');
         logInfo('Kopējās izmaksas', ethers.formatEther(ethers.parseEther(fileCostEth) + ethers.parseEther(manifestCostEth)) + ' ETH');
-        logInfo('Lietotāja kredīti', userCredits.toString() + ' winc');
         
         res.json({
             success: true,
@@ -513,6 +511,7 @@ app.post('/api/prepare-backup', async (req, res) => {
             previousHistory,
             previousManifestId,
             previousBackupNumber,
+            previousEncryptionIVs,
             fileCount: changedFiles.length,
             totalBytes: totalFileBytes,
             estimatedZipSize,
@@ -543,7 +542,7 @@ app.post('/api/execute-backup', async (req, res) => {
         const { 
             repoName, files, unchangedFiles, tokenId, fileCostEth, manifestCostEth, 
             walletAddress, newUserCredits, encryptedZip, iv,
-            previousHistory, previousManifestId, previousBackupNumber
+            previousHistory, previousManifestId, previousBackupNumber, previousEncryptionIVs
         } = req.body;
         
         logSection('📤 EXECUTE BACKUP');
@@ -630,7 +629,7 @@ app.post('/api/execute-backup', async (req, res) => {
         // 4. KREDĪTI
         await setUserCredits(walletAddress, BigInt(newUserCredits || '0'));
         
-        // 5. MANIFESTS
+        // 5. MANIFESTS ar IV vēsturi
         const backupCount = Number(await nftContract.getBackupCount(tokenId));
         const newBackupNumber = backupCount + 1;
         
@@ -646,6 +645,13 @@ app.post('/api/execute-backup', async (req, res) => {
         
         history.sort((a, b) => Number(b.backupNumber) - Number(a.backupNumber));
         
+        // IV vēsture — apvieno iepriekšējos ar jauno
+        const encryptionIVs = { ...(previousEncryptionIVs || {}) };
+        
+        if (iv && Array.isArray(iv)) {
+            encryptionIVs[zipResult.id] = iv;
+        }
+        
         const manifest = {
             metadata: {
                 repo: repoName,
@@ -655,7 +661,9 @@ app.post('/api/execute-backup', async (req, res) => {
             },
             manifest: 'arweave/paths',
             version: '0.2.0',
-            encryption: iv ? { iv } : null,
+            encryption: {
+                ivs: encryptionIVs
+            },
             archive: {
                 id: zipResult.id,
                 url: `${ARWEAVE_GATEWAY}/raw/${zipResult.id}`,
@@ -707,6 +715,7 @@ app.post('/api/execute-backup', async (req, res) => {
         });
         
         logSuccess(`MANIFEST TX ID: ${manifestResult.id}`);
+        logInfo('IV vēstures ieraksti', Object.keys(encryptionIVs).length);
         
         res.json({
             success: true,
