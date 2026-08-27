@@ -305,4 +305,67 @@
                     if (zip.file(filePath)) {
                         fileData = await zip.file(filePath).async('uint8array');
                     } else {
-                        const
+                        const fileName = filePath.split('/').pop();
+                        const matchingFile = Object.values(zip.files).find(f => 
+                            f.name === fileName || f.name.endsWith('/' + fileName)
+                        );
+                        
+                        if (matchingFile && !matchingFile.dir) {
+                            fileData = await matchingFile.async('uint8array');
+                        }
+                    }
+                    
+                    if (fileData) {
+                        finalFiles[filePath] = fileData;
+                        showDebug(`✅ Atjaunots: ${filePath}`);
+                    } else {
+                        showDebug(`❌ Nav atrasts ZIP: ${filePath}`);
+                    }
+                }
+                
+                showDebug('Kopā atjaunoti faili: ' + Object.keys(finalFiles).length);
+                
+                // 7. Galīgais ZIP
+                showStatus(`📦 Veido ZIP ar ${Object.keys(finalFiles).length} failiem...`, 'status');
+                showProgress(80);
+                
+                const finalZip = new JSZip();
+                for (const [filePath, data] of Object.entries(finalFiles)) {
+                    finalZip.file(filePath, data);
+                }
+                
+                const finalBlob = await finalZip.generateAsync({ type: 'blob' });
+                
+                showProgress(100);
+                
+                const repoName = manifest.metadata?.repo || 'repo';
+                const url = URL.createObjectURL(finalBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${repoName}-atjaunots.zip`;
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                hideProgress();
+                showStatus(`✅ Repozitorijs atjaunots!\nFaili: ${Object.keys(finalFiles).length}\nZIP arhīvi: ${zipIds.size}`, 'success');
+                
+            } catch (e) {
+                console.error('Kļūda:', e);
+                hideProgress();
+                showStatus('❌ Kļūda: ' + e.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = '📥 Atjaunot repozitoriju';
+            }
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const manifestParam = urlParams.get('manifest');
+            if (manifestParam) {
+                document.getElementById('manifestInput').value = manifestParam;
+            }
+        });
+    </script>
+</body>
+</html>
