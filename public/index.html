@@ -41,7 +41,7 @@
     <div id="walletSection" style="display: none;">
         <div class="info-row text-left">
             <span class="info-label" data-i18n="wallet">Maks</span>
-            <span class="info-value" id="walletAddress">-</span>
+            <span class="info-value word-break" id="walletAddress">-</span>
         </div>
         <button id="connectWalletButton" class="sign-button" data-i18n="connect-wallet">Savienot maku</button>
     </div>
@@ -55,9 +55,10 @@
             </select>
         </div>
         
-        <!-- Repo status un darbības -->
+        <!-- Repo status -->
         <div id="repoActions" style="display: none;">
-            <button id="actionButton" class="sign-button" style="display: none;"></button>
+            <div id="repoStatus" class="repo-status-display"></div>
+            <button id="actionButton" class="sign-button gradient-button" style="display: none;"></button>
         </div>
     </div>
     
