@@ -18,7 +18,7 @@ body {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); 
 }
 
-/* Valodu izvēle — balts teksts, bez rāmīša, ar hover palielināšanos */
+/* Valodu izvēle — balts teksts */
 .language-selector { display: flex; justify-content: center; gap: 16px; margin-bottom: 24px; }
 .lang-btn { 
     width: auto; 
@@ -27,7 +27,7 @@ body {
     border: none; 
     color: #ffffff; 
     font-size: 18px; 
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer; 
     margin: 0; 
     transition: all 0.3s ease; 
@@ -35,11 +35,11 @@ body {
     letter-spacing: 1px;
 }
 .lang-btn:hover { 
-    color: #79c0ff; 
+    color: #ffffff; 
     transform: scale(1.3); 
 }
 .lang-btn.active { 
-    color: #79c0ff; 
+    color: #3fb950; 
     font-weight: 700;
 }
 .lang-btn.active::after {
@@ -50,7 +50,7 @@ body {
     transform: translateX(-50%);
     width: 100%;
     height: 2px;
-    background: linear-gradient(90deg, #79c0ff, #58a6ff);
+    background: #3fb950;
     border-radius: 1px;
 }
 
@@ -63,7 +63,7 @@ h1 { font-size: 28px; margin-bottom: 8px; color: #79c0ff; text-align: center; }
 
 .word-break { word-break: break-all; font-size: 12px; color: #ffffff; }
 
-/* Izkrītošā izvēlne — bez rāmīša */
+/* Izkrītošā izvēlne */
 .repo-select {
     width: 100%;
     padding: 14px;
@@ -78,7 +78,7 @@ h1 { font-size: 28px; margin-bottom: 8px; color: #79c0ff; text-align: center; }
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2379c0ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
     background-repeat: no-repeat;
     background-position: right 12px center;
     background-size: 16px;
@@ -86,35 +86,38 @@ h1 { font-size: 28px; margin-bottom: 8px; color: #79c0ff; text-align: center; }
     transition: border-color 0.3s;
 }
 
-.repo-select:hover { border-bottom-color: #58a6ff; }
-.repo-select:focus { outline: none; border-bottom-color: #58a6ff; }
+.repo-select:hover { border-bottom-color: #3fb950; }
+.repo-select:focus { outline: none; border-bottom-color: #3fb950; }
 
 .repo-select option { background: #161b22; color: #ffffff; padding: 12px; }
 
 .repo-option-nft { color: #3fb950; }
 .repo-option-no-nft { color: #f85149; }
 
-/* Repo status paziņojums */
+/* Repo status paziņojums — izceļas */
 .repo-status-display {
     text-align: center;
-    padding: 16px;
+    padding: 20px;
     margin-top: 16px;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
 }
 .repo-status-display.has-nft {
-    background: rgba(63, 185, 80, 0.15);
+    background: linear-gradient(135deg, rgba(63, 185, 80, 0.2) 0%, rgba(46, 160, 67, 0.3) 100%);
     color: #3fb950;
-    border: 1px solid rgba(63, 185, 80, 0.4);
+    border: 2px solid #3fb950;
+    box-shadow: 0 4px 12px rgba(63, 185, 80, 0.2);
 }
 .repo-status-display.no-nft {
-    background: rgba(248, 81, 73, 0.15);
+    background: linear-gradient(135deg, rgba(248, 81, 73, 0.2) 0%, rgba(218, 54, 51, 0.3) 100%);
     color: #f85149;
-    border: 1px solid rgba(248, 81, 73, 0.4);
+    border: 2px solid #f85149;
+    box-shadow: 0 4px 12px rgba(248, 81, 73, 0.2);
 }
 
-/* Gradient pogām */
+/* VISAS pogas ar gradientiem */
 button { 
     width: 100%; 
     padding: 14px; 
@@ -134,7 +137,7 @@ button:hover {
     box-shadow: 0 4px 12px rgba(35, 134, 54, 0.3);
 }
 button:disabled { 
-    background: #21262d; 
+    background: linear-gradient(135deg, #30363d 0%, #21262d 100%); 
     color: #ffffff; 
     cursor: not-allowed; 
     transform: none;
@@ -156,26 +159,31 @@ button.logout-button:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-/* Abonementa poga — lielāks fonts, balts teksts */
+/* Abonementa poga — izceļas ar gradientu */
 .subscription-button { 
-    padding: 16px; 
-    font-size: 18px; 
-    font-weight: 600;
+    padding: 18px; 
+    font-size: 20px; 
+    font-weight: 700;
     margin-top: 8px; 
     color: #ffffff;
+    letter-spacing: 0.5px;
 }
 .subscription-button.active { 
-    background: linear-gradient(135deg, #21262d 0%, #30363d 100%); 
-    color: #ffffff; 
+    background: linear-gradient(135deg, #1a7f37 0%, #238636 100%); 
+    color: #ffffff;
+    border: 2px solid #3fb950;
+    box-shadow: 0 4px 12px rgba(63, 185, 80, 0.3);
 }
 .subscription-button.inactive { 
     background: linear-gradient(135deg, #f85149 0%, #da3633 100%); 
-    color: #ffffff; 
+    color: #ffffff;
+    border: 2px solid #f85149;
+    box-shadow: 0 4px 12px rgba(248, 81, 73, 0.3);
 }
 .subscription-button.inactive:hover {
     background: linear-gradient(135deg, #da3633 0%, #b62324 100%);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(248, 81, 73, 0.3);
+    box-shadow: 0 6px 16px rgba(248, 81, 73, 0.4);
 }
 
 .status { text-align: center; margin-top: 16px; font-size: 14px; color: #ffffff; white-space: pre-wrap; word-break: break-all; }
