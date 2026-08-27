@@ -92,6 +92,26 @@ function t(key) {
     return translations[currentLanguage][key] || translations.lv[key] || key;
 }
 
+function applyTranslations() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        el.textContent = t(el.dataset.i18n);
+    });
+    
+    // Atjaunina abonementa pogu
+    checkSubscription();
+    
+    // Atjaunina repo izvēlni, ja tā ir ielādēta
+    if (reposData.length > 0) {
+        loadRepos();
+    }
+    
+    // Atjaunina maka pogu, ja maks ir savienots
+    if (userAddress) {
+        const walletButton = document.getElementById('connectWalletButton');
+        walletButton.textContent = t('wallet-connected');
+    }
+}
+
 function switchLanguage(lang) {
     currentLanguage = lang;
     
@@ -99,12 +119,8 @@ function switchLanguage(lang) {
         btn.classList.toggle('active', btn.dataset.lang === lang);
     });
     
-    document.querySelectorAll('[data-i18n]').forEach(el => {
-        el.textContent = t(el.dataset.i18n);
-    });
-    
-    loadRepos();
-    checkSubscription();
+    // MOMENTĀNI tulko visu
+    applyTranslations();
 }
 
 async function init() {
