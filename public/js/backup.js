@@ -18,6 +18,7 @@ let currentPreviousManifestId = null;
 let currentPreviousBackupNumber = null;
 let currentPreviousEncryptionIVs = {};
 let currentFiles = [];
+let hasDepositedFiles = false;
 
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
@@ -247,7 +248,6 @@ async function prepareBackup() {
         currentUnchangedFiles = result.unchangedFiles || {};
         currentFiles = result.files || [];
         currentFileCostEth = result.fileCostEth || '0';
-        currentManifestCostEth = result.manifestCostEth || '0';
         currentNewUserCredits = result.newUserCredits || '0';
         currentPreviousHistory = result.previousHistory || [];
         currentPreviousManifestId = result.previousManifestId || null;
@@ -262,20 +262,16 @@ async function prepareBackup() {
         }
         
         const totalBytes = result.totalBytes || 0;
-        const totalCostEth = ethers.formatEther(
-            ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth)
-        );
         
         document.getElementById('status').innerHTML = 
             `📦 Faili: ${currentFiles.length}<br>` +
             `📦 Failu izmērs: ${(totalBytes / 1024 / 1024).toFixed(2)} MB<br>` +
             `💰 Failu izmaksas: ${currentFileCostEth} ETH<br>` +
-            `📄 Manifesta izmaksas: ${currentManifestCostEth} ETH<br><br>` +
-            `💎 Kopā: ${totalCostEth} ETH`;
+            `📄 Manifests: tiks aprēķināts pēc ZIP augšupielādes`;
         
         button.disabled = false;
-        button.textContent = 'Iemaksāt un augšupielādēt';
-        button.onclick = executeBackup;
+        button.textContent = 'Iemaksāt par ZIP un augšupielādēt';
+        button.onclick = executeZipUpload;
         
     } catch (e) {
         showError(e.message);
@@ -285,10 +281,10 @@ async function prepareBackup() {
 }
 
 // ==================================================
-// 2. EXECUTE BACKUP
+// 2. EXECUTE ZIP UPLOAD — 1. iemaksa par ZIP
 // ==================================================
 
-async function executeBackup() {
+async function executeZipUpload() {
     const button = document.getElementById('startBackupButton');
     button.disabled = true;
     
@@ -312,23 +308,24 @@ async function executeBackup() {
             }
         }
         
-        // 2. IEMAKSA
-        const totalCostWei = ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth);
+        // 2. IEMAKSA PAR ZIP (1. transakcija)
+        const fileCostWei = ethers.parseEther(currentFileCostEth);
         
-        if (totalCostWei > 0n) {
-            setStatus(`Iemaksā Treasury: ${ethers.formatEther(totalCostWei)} ETH...`);
-            button.textContent = '⏳ Iemaksa...';
+        if (fileCostWei > 0n && !hasDepositedFiles) {
+            setStatus(`Iemaksā Treasury par ZIP: ${currentFileCostEth} ETH...`);
+            button.textContent = '⏳ Iemaksa par ZIP...';
             
             const tx = await signer.sendTransaction({
                 to: CONFIG.treasuryAddress,
-                value: totalCostWei
+                value: fileCostWei
             });
             
             setStatus('Gaida iemaksas apstiprinājumu...');
             button.textContent = '⏳ Gaida...';
             await tx.wait();
             
-            setStatus('✅ Iemaksa veiksmīga!');
+            setStatus('✅ Iemaksa par ZIP veiksmīga!');
+            hasDepositedFiles = true;
         }
         
         // 3. ZIP IZVEIDE
@@ -356,8 +353,8 @@ async function executeBackup() {
             iv = encrypted.iv;
         }
         
-        // 5. AUGŠUPIELĀDE
-        setStatus('Augšupielādē...');
+        // 5. AUGŠUPIELĀDE ZIP
+        setStatus('Augšupielādē ZIP...');
         button.textContent = '⏳ Augšupielāde...';
         
         const executeResponse = await fetch('/api/execute-backup', {
@@ -370,7 +367,6 @@ async function executeBackup() {
                 tokenId: tokenId.toString(),
                 walletAddress: userAddress,
                 fileCostEth: currentFileCostEth,
-                manifestCostEth: currentManifestCostEth,
                 newUserCredits: currentNewUserCredits,
                 encryptedZip: Array.from(encryptedZipData),
                 iv: iv ? Array.from(iv) : null,
@@ -390,7 +386,98 @@ async function executeBackup() {
             return;
         }
         
-        // 6. PARAKSTS
+        // 6. PARĀDA MANIFESTA IZMAKSAS UN PIEPRASA 2. IEMAKSU
+        currentManifestCostEth = executeResult.manifestCostEth || '0';
+        
+        const manifestCostWei = ethers.parseEther(currentManifestCostEth);
+        
+        document.getElementById('status').innerHTML = 
+            `✅ ZIP augšupielādēts!<br><br>` +
+            `📄 Manifesta izmērs: ${(executeResult.manifestSize / 1024).toFixed(2)} KB<br>` +
+            `💰 Manifesta izmaksas: ${currentManifestCostEth} ETH<br><br>` +
+            `💎 Kopā: ${(parseFloat(currentFileCostEth) + parseFloat(currentManifestCostEth)).toFixed(18)} ETH`;
+        
+        if (manifestCostWei > 0n) {
+            button.disabled = false;
+            button.textContent = 'Iemaksāt par manifestu un pabeigt';
+            button.onclick = () => finalizeManifest(executeResult, files, button);
+        } else {
+            button.disabled = false;
+            button.textContent = 'Pabeigt backupu';
+            button.onclick = () => finalizeManifest(executeResult, files, button);
+        }
+        
+    } catch (e) {
+        if (e.code === 'ACTION_REJECTED') {
+            showError('Transakcija atcelta');
+        } else {
+            showError(e.message);
+        }
+        button.disabled = false;
+        button.textContent = 'Iemaksāt par ZIP un augšupielādēt';
+    }
+}
+
+// ==================================================
+// 3. FINALIZE MANIFEST — 2. iemaksa par manifestu
+// ==================================================
+
+async function finalizeManifest(executeResult, files, button) {
+    button.disabled = true;
+    
+    try {
+        const manifestCostWei = ethers.parseEther(currentManifestCostEth);
+        
+        // 2. IEMAKSA PAR MANIFESTU
+        if (manifestCostWei > 0n) {
+            setStatus(`Iemaksā Treasury par manifestu: ${currentManifestCostEth} ETH...`);
+            button.textContent = '⏳ Iemaksa par manifestu...';
+            
+            const tx = await signer.sendTransaction({
+                to: CONFIG.treasuryAddress,
+                value: manifestCostWei
+            });
+            
+            setStatus('Gaida iemaksas apstiprinājumu...');
+            button.textContent = '⏳ Gaida...';
+            await tx.wait();
+            
+            setStatus('✅ Iemaksa par manifestu veiksmīga!');
+        }
+        
+        // Augšupielādē manifestu (serverī)
+        setStatus('Augšupielādē manifestu...');
+        button.textContent = '⏳ Manifests...';
+        
+        const manifestResponse = await fetch('/api/finalize-manifest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                repoName: `${githubUser}/${repoName}`,
+                tokenId: tokenId.toString(),
+                walletAddress: userAddress,
+                manifestCostEth: currentManifestCostEth,
+                zipTxId: executeResult.zipTxId,
+                files,
+                unchangedFiles: currentUnchangedFiles,
+                previousHistory: currentPreviousHistory,
+                previousManifestId: currentPreviousManifestId,
+                previousBackupNumber: currentPreviousBackupNumber,
+                previousEncryptionIVs: currentPreviousEncryptionIVs,
+                iv: executeResult.iv
+            })
+        });
+        
+        const manifestResult = await manifestResponse.json();
+        
+        if (!manifestResult.success) {
+            showError(manifestResult.error || 'Kļūda');
+            button.disabled = false;
+            button.textContent = 'Mēģināt vēlreiz';
+            return;
+        }
+        
+        // PARAKSTS
         setStatus('Paraksti transakciju...');
         button.textContent = '⏳ Paraksts...';
         
@@ -401,7 +488,7 @@ async function executeBackup() {
         const currentNonce = await readContract.getNonce(tokenId);
         const onChainBackupCount = await readContract.getBackupCount(tokenId);
         
-        const manifestURI = `ar://${executeResult.manifestTxId}`;
+        const manifestURI = `ar://${manifestResult.manifestTxId}`;
         const manifestHash = ethers.keccak256(ethers.toUtf8Bytes(manifestURI));
         const merkleRoot = calculateMerkleRoot(files);
         
@@ -439,7 +526,7 @@ async function executeBackup() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 tokenId: tokenId.toString(),
-                manifestTxId: executeResult.manifestTxId,
+                manifestTxId: manifestResult.manifestTxId,
                 files,
                 deadline,
                 signature
@@ -449,7 +536,7 @@ async function executeBackup() {
         const finalizeResult = await finalizeResponse.json();
         
         if (finalizeResult.success) {
-            const totalCostEth = ethers.formatEther(totalCostWei);
+            const totalCostEth = (parseFloat(currentFileCostEth) + parseFloat(currentManifestCostEth)).toFixed(18);
             
             // PASLĒP POGU
             button.style.display = 'none';
@@ -457,7 +544,7 @@ async function executeBackup() {
             // PARĀDA PAZIŅOJUMU
             document.getElementById('status').innerHTML = 
                 `✅ Backups veiksmīgi pabeigts!<br><br>` +
-                `📦 Manifests: <a href="${CONFIG.arweaveGateway}/raw/${executeResult.manifestTxId}" target="_blank">ar://${executeResult.manifestTxId}</a><br>` +
+                `📦 Manifests: <a href="${CONFIG.arweaveGateway}/raw/${manifestResult.manifestTxId}" target="_blank">ar://${manifestResult.manifestTxId}</a><br>` +
                 `💳 Failu izmaksas: ${currentFileCostEth} ETH<br>` +
                 `📄 Manifesta izmaksas: ${currentManifestCostEth} ETH<br>` +
                 `💎 Kopā: ${totalCostEth} ETH`;
@@ -473,9 +560,8 @@ async function executeBackup() {
         } else {
             showError(e.message);
         }
-        button.style.display = 'block';
         button.disabled = false;
-        button.textContent = 'Iemaksāt un augšupielādēt';
+        button.textContent = 'Iemaksāt par manifestu un pabeigt';
     }
 }
 
