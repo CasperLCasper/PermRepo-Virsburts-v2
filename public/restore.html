@@ -213,7 +213,7 @@
             document.getElementById('debugInfo').style.display = 'none';
             
             try {
-                // 2. Lejupielādē manifestu
+                // 2. Lejupielādē pēdējo manifestu
                 showStatus('📥 Lejupielādē manifestu...', 'status');
                 showProgress(5);
                 
@@ -223,59 +223,110 @@
                 
                 const manifest = JSON.parse(manifestText);
                 
-                if (!manifest.paths || !manifest.archive) {
+                if (!manifest.paths) {
                     throw new Error('Nederīgs manifests!');
                 }
                 
-                showDebug('Failu skaits: ' + Object.keys(manifest.paths).length);
+                showDebug('Failu skaits paths: ' + Object.keys(manifest.paths).length);
                 showDebug('Backup numurs: ' + manifest.metadata?.backupNumber);
                 
-                // 3. Iegūst ZIP ID
-                const zipId = manifest.archive.id;
-                if (!zipId) {
-                    throw new Error('Manifestā nav ZIP ID!');
-                }
+                // 3. Savāc visus unikālos ZIP ID no paths
+                const zipIds = new Set();
+                const fileZipMap = {};
                 
-                showDebug('ZIP ID: ' + zipId);
-                
-                // 4. Lejupielādē ZIP
-                showStatus('📦 Lejupielādē ZIP arhīvu...', 'status');
-                showProgress(20);
-                
-                const zipBuffer = await fetchFromArweave(zipId);
-                showDebug(`ZIP lejupielādēts: ${zipBuffer.byteLength} baiti`);
-                
-                // 5. Atšifrē ZIP ar master key (TIEŠI, bez atvasināšanas)
-                showStatus('🔓 Atšifrē ZIP...', 'status');
-                showProgress(40);
-                
-                let decryptedZipBuffer = zipBuffer;
-                
-                if (manifest.encryption?.iv) {
-                    const iv = manifest.encryption.iv;
-                    decryptedZipBuffer = await decryptData(zipBuffer, iv, masterKey);
-                    showDebug('ZIP atšifrēts ar master atslēgu');
-                } else {
-                    showDebug('ZIP nav šifrēts (publisks repo)');
-                }
-                
-                // 6. Izpako ZIP
-                showStatus('📂 Izpako failus...', 'status');
-                showProgress(60);
-                
-                const zip = await JSZip.loadAsync(decryptedZipBuffer);
-                
-                const finalFiles = {};
-                for (const [filePath, fileEntry] of Object.entries(zip.files)) {
-                    if (!fileEntry.dir) {
-                        const fileData = await fileEntry.async('uint8array');
-                        finalFiles[filePath] = fileData;
+                for (const [filePath, info] of Object.entries(manifest.paths)) {
+                    const zipId = info.zipId || info.id;
+                    if (zipId) {
+                        zipIds.add(zipId);
+                        fileZipMap[filePath] = zipId;
                     }
                 }
                 
-                showDebug('Atjaunoti faili: ' + Object.keys(finalFiles).length);
+                showDebug('Unikālie ZIP faili: ' + zipIds.size);
+                showDebug('ZIP ID saraksts:');
+                for (const zipId of zipIds) {
+                    showDebug(`  - ${zipId}`);
+                }
                 
-                // 7. Izveido galīgo ZIP
+                // 4. Lejupielādē un atšifrē katru ZIP
+                showStatus(`📦 Lejupielādē ${zipIds.size} ZIP arhīvus...`, 'status');
+                showProgress(20);
+                
+                const zipContents = {};
+                let zipIndex = 0;
+                
+                for (const zipId of zipIds) {
+                    showDebug(`Lejupielādē ZIP: ${zipId}`);
+                    
+                    const zipBuffer = await fetchFromArweave(zipId);
+                    
+                    let decryptedZipBuffer = zipBuffer;
+                    
+                    // Atšifrē, ja manifestā ir IV
+                    if (manifest.encryption?.iv) {
+                        const iv = manifest.encryption.iv;
+                        try {
+                            decryptedZipBuffer = await decryptData(zipBuffer, iv, masterKey);
+                            showDebug(`ZIP atšifrēts: ${zipId}`);
+                        } catch (e) {
+                            showDebug(`⚠️ Neizdevās atšifrēt ${zipId} ar IV no pēdējā manifesta`);
+                            
+                            // Mēģina bez atšifrēšanas (varbūt nav šifrēts)
+                            decryptedZipBuffer = zipBuffer;
+                        }
+                    }
+                    
+                    try {
+                        const zip = await JSZip.loadAsync(decryptedZipBuffer);
+                        zipContents[zipId] = zip;
+                        showDebug(`✅ ZIP izpakots: ${zipId}`);
+                    } catch (e) {
+                        showDebug(`❌ Neizdevās izpakot ${zipId}: ${e.message}`);
+                    }
+                    
+                    zipIndex++;
+                    showProgress(20 + (zipIndex / zipIds.size) * 40);
+                }
+                
+                // 5. Izvelk visus failus no ZIP failiem pēc paths
+                showStatus('📂 Izvelk failus...', 'status');
+                showProgress(60);
+                
+                const finalFiles = {};
+                
+                for (const [filePath, zipId] of Object.entries(fileZipMap)) {
+                    const zip = zipContents[zipId];
+                    
+                    if (!zip) continue;
+                    
+                    let fileData = null;
+                    
+                    // Mēģina atrast failu pēc ceļa
+                    if (zip.file(filePath)) {
+                        fileData = await zip.file(filePath).async('uint8array');
+                    } else {
+                        // Mēģina atrast pēc faila nosaukuma
+                        const fileName = filePath.split('/').pop();
+                        const matchingFile = Object.values(zip.files).find(f => 
+                            f.name === fileName || f.name.endsWith('/' + fileName)
+                        );
+                        
+                        if (matchingFile && !matchingFile.dir) {
+                            fileData = await matchingFile.async('uint8array');
+                        }
+                    }
+                    
+                    if (fileData) {
+                        finalFiles[filePath] = fileData;
+                        showDebug(`✅ Atjaunots: ${filePath}`);
+                    } else {
+                        showDebug(`❌ Nav atrasts ZIP: ${filePath}`);
+                    }
+                }
+                
+                showDebug('Kopā atjaunoti faili: ' + Object.keys(finalFiles).length);
+                
+                // 6. Izveido galīgo ZIP
                 showStatus(`📦 Veido ZIP ar ${Object.keys(finalFiles).length} failiem...`, 'status');
                 showProgress(80);
                 
@@ -286,7 +337,7 @@
                 
                 const finalBlob = await finalZip.generateAsync({ type: 'blob' });
                 
-                // 8. Lejupielādē
+                // 7. Lejupielādē
                 showProgress(100);
                 
                 const repoName = manifest.metadata?.repo || 'repo';
@@ -298,7 +349,7 @@
                 URL.revokeObjectURL(url);
                 
                 hideProgress();
-                showStatus(`✅ Repozitorijs atjaunots!\nFaili: ${Object.keys(finalFiles).length}`, 'success');
+                showStatus(`✅ Repozitorijs atjaunots!\nFaili: ${Object.keys(finalFiles).length}\nZIP arhīvi: ${zipIds.size}`, 'success');
                 
             } catch (e) {
                 console.error('Kļūda:', e);
