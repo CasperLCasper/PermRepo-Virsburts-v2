@@ -146,27 +146,15 @@
                 throw new Error('Ievadi master atslēgu!');
             }
             
-            // Master atslēga var būt hex string vai base64
             if (input.startsWith('0x')) {
                 return input;
             }
             
-            // Mēģina interpretēt kā hex
-            try {
-                return '0x' + input;
-            } catch {
-                return input;
-            }
-        }
-        
-        function deriveKeyFromMaster(masterKey, backupNumber) {
-            // HD atslēgu atvasināšana — vienkārša versija
-            const message = `${masterKey}:${backupNumber}`;
-            return ethers.keccak256(ethers.toUtf8Bytes(message));
+            return '0x' + input;
         }
         
         async function importAESKey(keyHex) {
-            const key = keyHex.slice(2); // Noņem "0x"
+            const key = keyHex.slice(2);
             const keyBytes = new Uint8Array(32);
             for (let i = 0; i < 32; i++) {
                 keyBytes[i] = parseInt(key.substring(i * 2, i * 2 + 2), 16);
@@ -257,12 +245,7 @@
                 const zipBuffer = await fetchFromArweave(zipId);
                 showDebug(`ZIP lejupielādēts: ${zipBuffer.byteLength} baiti`);
                 
-                // 5. Atvasina atslēgu
-                const backupNumber = manifest.metadata?.backupNumber || 1;
-                const derivedKey = deriveKeyFromMaster(masterKey, backupNumber);
-                showDebug('Atslēga atvasināta');
-                
-                // 6. Atšifrē ZIP (ja IV ir manifestā)
+                // 5. Atšifrē ZIP ar master key (TIEŠI, bez atvasināšanas)
                 showStatus('🔓 Atšifrē ZIP...', 'status');
                 showProgress(40);
                 
@@ -270,13 +253,13 @@
                 
                 if (manifest.encryption?.iv) {
                     const iv = manifest.encryption.iv;
-                    decryptedZipBuffer = await decryptData(zipBuffer, iv, derivedKey);
-                    showDebug('ZIP atšifrēts');
+                    decryptedZipBuffer = await decryptData(zipBuffer, iv, masterKey);
+                    showDebug('ZIP atšifrēts ar master atslēgu');
                 } else {
                     showDebug('ZIP nav šifrēts (publisks repo)');
                 }
                 
-                // 7. Izpako ZIP
+                // 6. Izpako ZIP
                 showStatus('📂 Izpako failus...', 'status');
                 showProgress(60);
                 
@@ -292,7 +275,7 @@
                 
                 showDebug('Atjaunoti faili: ' + Object.keys(finalFiles).length);
                 
-                // 8. Izveido galīgo ZIP
+                // 7. Izveido galīgo ZIP
                 showStatus(`📦 Veido ZIP ar ${Object.keys(finalFiles).length} failiem...`, 'status');
                 showProgress(80);
                 
@@ -303,7 +286,7 @@
                 
                 const finalBlob = await finalZip.generateAsync({ type: 'blob' });
                 
-                // 9. Lejupielādē
+                // 8. Lejupielādē
                 showProgress(100);
                 
                 const repoName = manifest.metadata?.repo || 'repo';
