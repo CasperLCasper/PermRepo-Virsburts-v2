@@ -18,23 +18,25 @@ body {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); 
 }
 
-/* Valodu izvēle — bez rāmīša, ar hover palielināšanos */
-.language-selector { display: flex; justify-content: center; gap: 12px; margin-bottom: 24px; }
+/* Valodu izvēle — balts teksts, bez rāmīša, ar hover palielināšanos */
+.language-selector { display: flex; justify-content: center; gap: 16px; margin-bottom: 24px; }
 .lang-btn { 
     width: auto; 
     padding: 8px 16px; 
     background: transparent; 
     border: none; 
-    color: #8b949e; 
-    font-size: 16px; 
+    color: #ffffff; 
+    font-size: 18px; 
+    font-weight: 600;
     cursor: pointer; 
     margin: 0; 
     transition: all 0.3s ease; 
     position: relative;
+    letter-spacing: 1px;
 }
 .lang-btn:hover { 
-    color: #e6edf3; 
-    transform: scale(1.2); 
+    color: #79c0ff; 
+    transform: scale(1.3); 
 }
 .lang-btn.active { 
     color: #79c0ff; 
@@ -46,19 +48,20 @@ body {
     bottom: -4px;
     left: 50%;
     transform: translateX(-50%);
-    width: 24px;
+    width: 100%;
     height: 2px;
-    background: #79c0ff;
+    background: linear-gradient(90deg, #79c0ff, #58a6ff);
     border-radius: 1px;
 }
 
 h1 { font-size: 28px; margin-bottom: 8px; color: #79c0ff; text-align: center; }
-.subtitle { color: #b0b8c4; margin-bottom: 24px; font-size: 14px; text-align: center; }
+.subtitle { color: #ffffff; margin-bottom: 24px; font-size: 16px; text-align: center; }
 .info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #21262d; }
 .info-row.text-left { text-align: left; flex-direction: column; gap: 8px; border-bottom: none; }
-.info-label { color: #b0b8c4; }
+.info-label { color: #ffffff; font-size: 16px; }
+.info-value { font-weight: 600; font-size: 14px; word-break: break-all; color: #ffffff; }
 
-.word-break { word-break: break-all; font-size: 12px; color: #8b949e; }
+.word-break { word-break: break-all; font-size: 12px; color: #ffffff; }
 
 /* Izkrītošā izvēlne — bez rāmīša */
 .repo-select {
@@ -67,7 +70,7 @@ h1 { font-size: 28px; margin-bottom: 8px; color: #79c0ff; text-align: center; }
     background: transparent;
     border: none;
     border-bottom: 2px solid #30363d;
-    color: #e6edf3;
+    color: #ffffff;
     font-size: 16px;
     margin-top: 8px;
     margin-bottom: 16px;
@@ -86,7 +89,7 @@ h1 { font-size: 28px; margin-bottom: 8px; color: #79c0ff; text-align: center; }
 .repo-select:hover { border-bottom-color: #58a6ff; }
 .repo-select:focus { outline: none; border-bottom-color: #58a6ff; }
 
-.repo-select option { background: #161b22; color: #e6edf3; padding: 12px; }
+.repo-select option { background: #161b22; color: #ffffff; padding: 12px; }
 
 .repo-option-nft { color: #3fb950; }
 .repo-option-no-nft { color: #f85149; }
@@ -101,22 +104,22 @@ h1 { font-size: 28px; margin-bottom: 8px; color: #79c0ff; text-align: center; }
     font-weight: 600;
 }
 .repo-status-display.has-nft {
-    background: rgba(63, 185, 80, 0.1);
+    background: rgba(63, 185, 80, 0.15);
     color: #3fb950;
-    border: 1px solid rgba(63, 185, 80, 0.3);
+    border: 1px solid rgba(63, 185, 80, 0.4);
 }
 .repo-status-display.no-nft {
-    background: rgba(248, 81, 73, 0.1);
+    background: rgba(248, 81, 73, 0.15);
     color: #f85149;
-    border: 1px solid rgba(248, 81, 73, 0.3);
+    border: 1px solid rgba(248, 81, 73, 0.4);
 }
 
-/* Gradients pogām */
+/* Gradient pogām */
 button { 
     width: 100%; 
     padding: 14px; 
     background: linear-gradient(135deg, #238636 0%, #2ea043 100%); 
-    color: #fff; 
+    color: #ffffff; 
     border: none; 
     border-radius: 8px; 
     font-size: 16px; 
@@ -132,32 +135,42 @@ button:hover {
 }
 button:disabled { 
     background: #21262d; 
-    color: #8b949e; 
+    color: #ffffff; 
     cursor: not-allowed; 
     transform: none;
     box-shadow: none;
 }
 button.sign-button { padding: 20px; font-size: 20px; }
+
+/* Logout poga */
 button.logout-button { 
-    background: #21262d; 
-    color: #8b949e; 
+    background: linear-gradient(135deg, #21262d 0%, #30363d 100%); 
+    color: #ffffff; 
     padding: 10px; 
     font-size: 14px; 
     margin-top: 8px; 
 }
 button.logout-button:hover {
-    background: #30363d;
-    transform: none;
-    box-shadow: none;
+    background: linear-gradient(135deg, #30363d 0%, #3d444d 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
-.subscription-button { padding: 12px; font-size: 14px; margin-top: 8px; }
+
+/* Abonementa poga — lielāks fonts, balts teksts */
+.subscription-button { 
+    padding: 16px; 
+    font-size: 18px; 
+    font-weight: 600;
+    margin-top: 8px; 
+    color: #ffffff;
+}
 .subscription-button.active { 
-    background: #21262d; 
-    color: #8b949e; 
+    background: linear-gradient(135deg, #21262d 0%, #30363d 100%); 
+    color: #ffffff; 
 }
 .subscription-button.inactive { 
     background: linear-gradient(135deg, #f85149 0%, #da3633 100%); 
-    color: #fff; 
+    color: #ffffff; 
 }
 .subscription-button.inactive:hover {
     background: linear-gradient(135deg, #da3633 0%, #b62324 100%);
@@ -165,7 +178,7 @@ button.logout-button:hover {
     box-shadow: 0 4px 12px rgba(248, 81, 73, 0.3);
 }
 
-.status { text-align: center; margin-top: 16px; font-size: 14px; color: #b0b8c4; white-space: pre-wrap; word-break: break-all; }
+.status { text-align: center; margin-top: 16px; font-size: 14px; color: #ffffff; white-space: pre-wrap; word-break: break-all; }
 .error { color: #f85149; margin-top: 12px; text-align: center; font-size: 14px; }
 a { color: #79c0ff; text-decoration: none; }
 a:hover { text-decoration: underline; }
