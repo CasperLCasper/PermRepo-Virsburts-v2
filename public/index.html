@@ -39,9 +39,20 @@
         <button id="connectWalletButton" class="sign-button">Savienot MetaMask</button>
     </div>
     
-    <!-- Repo list -->
+    <!-- Repo izvēle -->
     <div id="repoSection" style="display: none;">
-        <div class="repo-list" id="repoList"></div>
+        <div class="info-row text-left">
+            <span class="info-label">Repozitorijs</span>
+            <select id="repoSelect" class="repo-select">
+                <option value="">Izvēlies repozitoriju...</option>
+            </select>
+        </div>
+        
+        <!-- Repo status un darbības -->
+        <div id="repoActions" style="display: none;">
+            <div id="repoStatus" class="status"></div>
+            <button id="actionButton" class="sign-button" style="display: none;"></button>
+        </div>
     </div>
     
     <div class="status" id="status"></div>
@@ -49,7 +60,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
