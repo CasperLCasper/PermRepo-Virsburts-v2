@@ -16,6 +16,7 @@ let currentUnchangedFiles = {};
 let currentPreviousHistory = [];
 let currentPreviousManifestId = null;
 let currentPreviousBackupNumber = null;
+let currentFiles = [];
 
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
@@ -112,12 +113,16 @@ async function loadNFTInfo() {
         document.getElementById('lastMerkleRoot').textContent = lastMerkleRoot || 'Nav';
         
         document.getElementById('startBackupButton').disabled = false;
-        document.getElementById('startBackupButton').onclick = startBackup;
+        document.getElementById('startBackupButton').onclick = prepareBackup;
         
     } catch (e) {
         showError(e.message);
     }
 }
+
+// ==================================================
+// MASTER KEY
+// ==================================================
 
 async function generateMasterKey(walletAddress, repoName, tokenId, githubUser) {
     const cryptoRandom = new Uint8Array(64);
@@ -208,7 +213,11 @@ function showMasterKey(masterKey) {
     });
 }
 
-async function startBackup() {
+// ==================================================
+// 1. PREPARE BACKUP — parāda informāciju uzreiz
+// ==================================================
+
+async function prepareBackup() {
     const button = document.getElementById('startBackupButton');
     button.disabled = true;
     button.textContent = '⏳ Sagatavo...';
@@ -216,49 +225,76 @@ async function startBackup() {
     setStatus('Sagatavo backupu...');
     
     try {
-        // 1. PREPARE BACKUP
-        const prepareResponse = await fetch('/api/prepare-backup', {
+        const response = await fetch('/api/prepare-backup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                repoName, 
-                walletAddress: userAddress 
-            })
+            body: JSON.stringify({ repoName, walletAddress: userAddress })
         });
         
-        const prepareResult = await prepareResponse.json();
+        const result = await response.json();
         
-        if (!prepareResult.success) {
-            showError(prepareResult.error || 'Kļūda');
+        if (!result.success) {
+            showError(result.error || 'Kļūda');
             button.disabled = false;
             button.textContent = 'Sākt backupu';
             return;
         }
         
-        const files = prepareResult.files || [];
+        currentUnchangedFiles = result.unchangedFiles || {};
+        currentFiles = result.files || [];
+        currentFileCostEth = result.fileCostEth || '0';
+        currentManifestCostEth = result.manifestCostEth || '0';
+        currentNewUserCredits = result.newUserCredits || '0';
+        currentPreviousHistory = result.previousHistory || [];
+        currentPreviousManifestId = result.previousManifestId || null;
+        currentPreviousBackupNumber = result.previousBackupNumber || null;
         
-        if (files.length === 0) {
+        if (currentFiles.length === 0) {
             setStatus('✅ Nav izmaiņu — visi faili jau ir backupēti!');
             button.disabled = false;
             button.textContent = 'Sākt backupu';
             return;
         }
         
-        currentFileCostEth = prepareResult.fileCostEth || '0';
-        currentManifestCostEth = prepareResult.manifestCostEth || '0';
-        currentNewUserCredits = prepareResult.newUserCredits || '0';
-        currentUnchangedFiles = prepareResult.unchangedFiles || {};
-        currentPreviousHistory = prepareResult.previousHistory || [];
-        currentPreviousManifestId = prepareResult.previousManifestId || null;
-        currentPreviousBackupNumber = prepareResult.previousBackupNumber || null;
+        // UZREIZ PARĀDA INFORMĀCIJU
+        const totalBytes = result.totalBytes || 0;
+        const totalCostEth = ethers.formatEther(
+            ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth)
+        );
         
-        // 2. UZREIZ PARĀDA INFORMĀCIJU
-        showBackupInfo(prepareResult, files);
+        document.getElementById('status').innerHTML = 
+            `📦 Faili: ${currentFiles.length}<br>` +
+            `📦 Failu izmērs: ${(totalBytes / 1024 / 1024).toFixed(2)} MB<br>` +
+            `💰 Failu izmaksas: ${currentFileCostEth} ETH<br>` +
+            `📄 Manifesta izmaksas: ${currentManifestCostEth} ETH<br><br>` +
+            `💎 Kopā: ${totalCostEth} ETH`;
         
-        // 3. MASTER KEY
-        const currentBackupCount = Number(prepareResult.backupCount || 0);
+        button.disabled = false;
+        button.textContent = 'Iemaksāt un augšupielādēt';
+        button.onclick = executeBackup;
         
-        if (currentBackupCount === 0) {
+    } catch (e) {
+        showError(e.message);
+        button.disabled = false;
+        button.textContent = 'Sākt backupu';
+    }
+}
+
+// ==================================================
+// 2. EXECUTE BACKUP — iemaksa, ZIP, šifrēšana, augšupielāde
+// ==================================================
+
+async function executeBackup() {
+    const button = document.getElementById('startBackupButton');
+    button.disabled = true;
+    
+    try {
+        const files = currentFiles;
+        
+        // 1. MASTER KEY
+        const backupCount = Number(button.dataset.backupCount || await getBackupCountFromChain());
+        
+        if (backupCount === 0) {
             setStatus('Ģenerē master atslēgu...');
             button.textContent = '⏳ Atslēga...';
             
@@ -272,7 +308,7 @@ async function startBackup() {
             }
         }
         
-        // 4. IEMAKSA
+        // 2. IEMAKSA
         const totalCostWei = ethers.parseEther(currentFileCostEth) + ethers.parseEther(currentManifestCostEth);
         
         if (totalCostWei > 0n) {
@@ -291,7 +327,7 @@ async function startBackup() {
             setStatus('✅ Iemaksa veiksmīga!');
         }
         
-        // 5. ZIP IZVEIDE
+        // 3. ZIP IZVEIDE
         setStatus('Izveido ZIP...');
         button.textContent = '⏳ ZIP...';
         
@@ -303,12 +339,12 @@ async function startBackup() {
         
         const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
         
-        // 6. ŠIFRĒ
+        // 4. ŠIFRĒ
         let encryptedZipData = zipBuffer;
         let iv = null;
         
         if (masterKey && masterKey.trim()) {
-            setStatus('Šifrē ZIP ar master atslēgu...');
+            setStatus('Šifrē ZIP...');
             button.textContent = '⏳ Šifrē...';
             
             const encrypted = await encryptData(zipBuffer, masterKey);
@@ -316,7 +352,7 @@ async function startBackup() {
             iv = encrypted.iv;
         }
         
-        // 7. AUGŠUPIELĀDE
+        // 5. AUGŠUPIELĀDE
         setStatus('Augšupielādē...');
         button.textContent = '⏳ Augšupielāde...';
         
@@ -345,12 +381,12 @@ async function startBackup() {
         if (!executeResult.success) {
             showError(executeResult.error || 'Kļūda');
             button.disabled = false;
-            button.textContent = 'Sākt backupu';
+            button.textContent = 'Mēģināt vēlreiz';
             return;
         }
         
-        // 8. PARAKSTS
-        setStatus('Manifests augšupielādēts! Paraksti transakciju...');
+        // 6. PARAKSTS
+        setStatus('Paraksti transakciju...');
         button.textContent = '⏳ Paraksts...';
         
         const provider = new ethers.BrowserProvider(window.ethereum);
@@ -410,19 +446,19 @@ async function startBackup() {
         if (finalizeResult.success) {
             const totalCostEth = ethers.formatEther(totalCostWei);
             
-            document.getElementById('status').innerHTML = `
-                ✅ Backups veiksmīgi pabeigts!<br><br>
-                📦 Manifests: <a href="${CONFIG.arweaveGateway}/raw/${executeResult.manifestTxId}" target="_blank">ar://${executeResult.manifestTxId}</a><br>
-                💳 Failu izmaksas: ${currentFileCostEth} ETH<br>
-                📄 Manifesta izmaksas: ${currentManifestCostEth} ETH<br>
-                💎 Kopā: ${totalCostEth} ETH
-            `;
+            document.getElementById('status').innerHTML = 
+                `✅ Backups veiksmīgi pabeigts!<br><br>` +
+                `📦 Manifests: <a href="${CONFIG.arweaveGateway}/raw/${executeResult.manifestTxId}" target="_blank">ar://${executeResult.manifestTxId}</a><br>` +
+                `💳 Failu izmaksas: ${currentFileCostEth} ETH<br>` +
+                `📄 Manifesta izmaksas: ${currentManifestCostEth} ETH<br>` +
+                `💎 Kopā: ${totalCostEth} ETH`;
+            
             button.textContent = '✅ Pabeigts!';
             await loadNFTInfo();
         } else {
             showError(finalizeResult.error || 'Kļūda');
             button.disabled = false;
-            button.textContent = 'Sākt backupu';
+            button.textContent = 'Mēģināt vēlreiz';
         }
         
     } catch (e) {
@@ -432,31 +468,15 @@ async function startBackup() {
             showError(e.message);
         }
         button.disabled = false;
-        button.textContent = 'Sākt backupu';
+        button.textContent = 'Iemaksāt un augšupielādēt';
     }
 }
 
-function showBackupInfo(prepareResult, files) {
-    const totalCostEth = ethers.formatEther(
-        ethers.parseEther(prepareResult.fileCostEth) + ethers.parseEther(prepareResult.manifestCostEth)
-    );
-    
-    const infoHtml = `
-        <div style="margin: 16px 0; padding: 16px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px;">
-            <h3 style="color: #79c0ff; margin-bottom: 12px;">📊 Backupa informācija</h3>
-            <div style="color: #b0b8c4; font-size: 14px; line-height: 1.8;">
-                <div>📦 Failu skaits: <strong style="color: #e6edf3;">${files.length}</strong></div>
-                <div>📦 Failu izmērs: <strong style="color: #e6edf3;">${(prepareResult.totalBytes / 1024 / 1024).toFixed(2)} MB</strong></div>
-                <div>💳 Failu izmaksas: <strong style="color: #e6edf3;">${prepareResult.fileCostEth} ETH</strong></div>
-                <div>📄 Manifesta izmaksas: <strong style="color: #e6edf3;">${prepareResult.manifestCostEth} ETH</strong></div>
-                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #30363d;">
-                    💎 <strong style="color: #3fb950; font-size: 16px;">KOPĀ JĀMAKSĀ: ${totalCostEth} ETH</strong>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    document.getElementById('status').innerHTML = infoHtml;
+async function getBackupCountFromChain() {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const nftContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
+    const count = await nftContract.getBackupCount(tokenId);
+    return Number(count);
 }
 
 async function encryptData(data, keyHex) {
