@@ -28,10 +28,6 @@ const USDC_ABI = [
     "function approve(address spender, uint256 amount) external returns (bool)"
 ];
 
-// ==================================================
-// VALODU TULKOJUMI
-// ==================================================
-
 const translations = {
     lv: {
         subtitle: 'GitHub repo backupi uz Arweave',
@@ -100,20 +96,16 @@ function switchLanguage(lang) {
         btn.classList.toggle('active', btn.dataset.lang === lang);
     });
     
-    // MOMENTĀNI tulko VISU
     applyTranslations();
     
-    // Atjaunina repo izvēlni
     if (reposData.length > 0) {
         loadRepos();
     }
     
-    // Atjaunina repo statusu, ja ir izvēlēts repo
     if (selectedRepoName) {
         checkRepoStatus(selectedRepoName);
     }
     
-    // Atjaunina maka pogu, ja maks ir savienots
     if (userAddress) {
         const walletButton = document.getElementById('connectWalletButton');
         walletButton.textContent = t('wallet-connected');
@@ -125,7 +117,6 @@ function applyTranslations() {
         el.textContent = t(el.dataset.i18n);
     });
     
-    // Atjaunina abonementa pogu
     checkSubscription();
 }
 
@@ -287,7 +278,6 @@ async function loadRepos() {
             select.appendChild(option);
         }
         
-        // Saglabā izvēlēto repo
         if (selectedRepoName) {
             select.value = selectedRepoName;
         }
@@ -330,6 +320,7 @@ async function checkRepoStatus(repoName) {
             repoStatus.textContent = t('nft-linked');
             repoStatus.className = 'repo-status-display has-nft';
             actionButton.textContent = t('open-backup');
+            actionButton.className = 'sign-button backup-button';
             actionButton.style.display = 'block';
             actionButton.onclick = () => {
                 window.location.href = `/backup.html?repo=${encodeURIComponent(repoName)}`;
@@ -338,6 +329,7 @@ async function checkRepoStatus(repoName) {
             repoStatus.textContent = t('no-nft');
             repoStatus.className = 'repo-status-display no-nft';
             actionButton.textContent = t('mint-nft');
+            actionButton.className = 'sign-button';
             actionButton.style.display = 'block';
             actionButton.onclick = () => mintNFT(repoName);
         }
