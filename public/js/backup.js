@@ -10,7 +10,9 @@ let tokenId = null;
 let githubUser = null;
 let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
 let currentFileCostEth = '0';
+let currentManifestCostEth = '0';
 let currentFileWinc = '0';
+let currentManifestWinc = '0';
 let currentNewUserCredits = '0';
 let masterKey = null;
 let currentUnchangedFiles = {};
@@ -60,6 +62,7 @@ const translations = {
         'total-cost': '💎 Kopā',
         'files-count': '📦 Faili',
         'files-size': '📦 Failu izmērs',
+        'manifest-size': '📄 Manifesta izmērs',
         'creating-zip': 'Izveido ZIP...',
         'encrypting': 'Šifrē ZIP...',
         'try-again': 'Mēģināt vēlreiz',
@@ -73,7 +76,9 @@ const translations = {
         'waiting': 'Gaida apstiprinājumu...',
         'success': '✅ Veiksmīgi!',
         'finish-btn': 'Pabeigt backupu',
-        'deposit-manifest-btn': 'Iemaksāt par manifestu un pabeigt'
+        'deposit-manifest-btn': 'Iemaksāt par manifestu un pabeigt',
+        'zip-uploaded': '✅ ZIP augšupielādēts!',
+        'manifest-ready': 'Manifests gatavs'
     },
     en: {
         'backup-title': '📦 PermRepo Backups',
@@ -99,6 +104,7 @@ const translations = {
         'total-cost': '💎 Total',
         'files-count': '📦 Files',
         'files-size': '📦 File size',
+        'manifest-size': '📄 Manifest size',
         'creating-zip': 'Creating ZIP...',
         'encrypting': 'Encrypting ZIP...',
         'try-again': 'Try again',
@@ -112,7 +118,9 @@ const translations = {
         'waiting': 'Waiting for confirmation...',
         'success': '✅ Success!',
         'finish-btn': 'Finish backup',
-        'deposit-manifest-btn': 'Deposit for manifest and finish'
+        'deposit-manifest-btn': 'Deposit for manifest and finish',
+        'zip-uploaded': '✅ ZIP uploaded!',
+        'manifest-ready': 'Manifest ready'
     },
     eo: {
         'backup-title': '📦 PermRepo Sekurkopioj',
@@ -138,6 +146,7 @@ const translations = {
         'total-cost': '💎 Sumo',
         'files-count': '📦 Dosieroj',
         'files-size': '📦 Dosiergrando',
+        'manifest-size': '📄 Manifestogrando',
         'creating-zip': 'Kreante ZIP...',
         'encrypting': 'Ĉifrante ZIP...',
         'try-again': 'Reprovi',
@@ -151,7 +160,9 @@ const translations = {
         'waiting': 'Atendante konfirmon...',
         'success': '✅ Sukceso!',
         'finish-btn': 'Fini sekurkopion',
-        'deposit-manifest-btn': 'Deponi por manifesto kaj fini'
+        'deposit-manifest-btn': 'Deponi por manifesto kaj fini',
+        'zip-uploaded': '✅ ZIP alŝutita!',
+        'manifest-ready': 'Manifesto preta'
     }
 };
 
@@ -394,7 +405,8 @@ async function prepareBackup() {
         document.getElementById('status').innerHTML = 
             `${t('files-count')}: ${currentFiles.length}<br>` +
             `${t('files-size')}: ${sizeText}<br>` +
-            `${t('file-cost')}: ${currentFileCostEth} Base ETH`;
+            `${t('file-cost')}: ${currentFileCostEth} Base ETH<br>` +
+            `${t('manifest-cost')}: ${t('preparing')}`;
         
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
@@ -514,8 +526,8 @@ async function executeZipUpload() {
         }
         
         document.getElementById('status').innerHTML = 
-            `✅ ZIP augšupielādēts!<br><br>` +
-            `${t('manifest-cost')}: ${currentFileCostEth} Base ETH`;
+            `${t('zip-uploaded')}<br><br>` +
+            `${t('manifest-cost')}: ${t('preparing')}`;
         
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
@@ -541,10 +553,52 @@ async function finalizeManifest(zipTxId, button) {
     button.disabled = true;
     
     try {
-        const manifestCostWei = ethers.parseEther(currentFileCostEth);
+        setStatus(t('uploading'));
+        
+        const manifestResponse = await fetch('/api/finalize-manifest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                repoName: `${githubUser}/${repoName}`,
+                tokenId: tokenId.toString(),
+                walletAddress: userAddress,
+                zipTxId,
+                fileMetadata: currentFileMetadata,
+                unchangedFiles: currentUnchangedFiles,
+                previousHistory: currentPreviousHistory,
+                previousManifestId: currentPreviousManifestId,
+                previousBackupNumber: currentPreviousBackupNumber,
+                previousEncryptionIVs: currentPreviousEncryptionIVs,
+                iv: Array.from(currentIV)
+            })
+        });
+        
+        const manifestResult = await manifestResponse.json();
+        
+        if (!manifestResult.success) {
+            showError(manifestResult.error || 'Kļūda');
+            button.disabled = false;
+            button.textContent = t('try-again');
+            return;
+        }
+        
+        // Faktiskās manifesta izmaksas no servera atbildes
+        currentManifestCostEth = manifestResult.manifestCostEth || '0';
+        currentManifestWinc = manifestResult.manifestWinc || '0';
+        const manifestSize = manifestResult.manifestSize || 0;
+        const manifestSizeText = formatFileSize(manifestSize);
+        
+        // Parāda manifesta izmaksas
+        document.getElementById('status').innerHTML = 
+            `${t('manifest-ready')}<br><br>` +
+            `${t('manifest-size')}: ${manifestSizeText}<br>` +
+            `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
+        
+        // IEMAKSA PAR MANIFESTU
+        const manifestCostWei = ethers.parseEther(currentManifestCostEth);
         
         if (manifestCostWei > 0n && !hasDepositedManifest) {
-            setStatus(`${t('deposit-manifest')}: ${currentFileCostEth} Base ETH...`);
+            setStatus(`${t('deposit-manifest')}: ${currentManifestCostEth} Base ETH...`);
             button.textContent = '⏳';
             
             const tx = await signer.sendTransaction({
@@ -559,37 +613,7 @@ async function finalizeManifest(zipTxId, button) {
             hasDepositedManifest = true;
         }
         
-        setStatus(t('uploading'));
-        
-        const manifestResponse = await fetch('/api/finalize-manifest', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                repoName: `${githubUser}/${repoName}`,
-                tokenId: tokenId.toString(),
-                walletAddress: userAddress,
-                manifestCostEth: currentFileCostEth,
-                zipTxId,
-                fileMetadata: currentFileMetadata,
-                unchangedFiles: currentUnchangedFiles,
-                previousHistory: currentPreviousHistory,
-                previousManifestId: currentPreviousManifestId,
-                previousBackupNumber: currentPreviousBackupNumber,
-                previousEncryptionIVs: currentPreviousEncryptionIVs,
-                iv: Array.from(currentIV),
-                manifestWinc: currentFileWinc
-            })
-        });
-        
-        const manifestResult = await manifestResponse.json();
-        
-        if (!manifestResult.success) {
-            showError(manifestResult.error || 'Kļūda');
-            button.disabled = false;
-            button.textContent = t('try-again');
-            return;
-        }
-        
+        // PARAKSTS
         setStatus(t('signing'));
         
         const provider = new ethers.BrowserProvider(window.ethereum);
@@ -650,16 +674,16 @@ async function finalizeManifest(zipTxId, button) {
             
             button.style.display = 'none';
             
-            const totalCostEth = (parseFloat(currentFileCostEth) * 2).toFixed(18);
-            const sizeText = formatFileSize(currentFiles.reduce((sum, f) => sum + (f.size || 0), 0));
+            const totalCostEth = (parseFloat(currentFileCostEth) + parseFloat(currentManifestCostEth)).toFixed(18);
+            const fileSizeText = formatFileSize(currentFiles.reduce((sum, f) => sum + (f.size || 0), 0));
             
             document.getElementById('status').innerHTML = 
                 `${t('backup-complete')}<br><br>` +
                 `${t('manifest-link')}: <a href="${CONFIG.arweaveGateway}/raw/${manifestResult.manifestTxId}" target="_blank">ar://${manifestResult.manifestTxId}</a><br>` +
                 `${t('files-count')}: ${currentFiles.length}<br>` +
-                `${t('files-size')}: ${sizeText}<br>` +
+                `${t('files-size')}: ${fileSizeText}<br>` +
                 `${t('file-cost')}: ${currentFileCostEth} Base ETH<br>` +
-                `${t('manifest-cost')}: ${currentFileCostEth} Base ETH<br>` +
+                `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH<br>` +
                 `${t('total-cost')}: ${totalCostEth} Base ETH`;
         } else {
             showError(finalizeResult.error || 'Kļūda');
