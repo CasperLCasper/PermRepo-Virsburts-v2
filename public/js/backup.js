@@ -19,7 +19,11 @@ let currentPreviousManifestId = null;
 let currentPreviousBackupNumber = null;
 let currentPreviousEncryptionIVs = {};
 let currentFiles = [];
+let currentFileMetadata = [];
+let currentMerkleRoot = null;
+let currentIV = null;
 let hasDepositedFiles = false;
+let hasDepositedManifest = false;
 
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
@@ -45,6 +49,7 @@ const translations = {
         'generate-key': 'Ģenerē master atslēgu...',
         'enter-key': 'Ievadi savu Master Key:',
         'deposit-files': 'Iemaksā Treasury par ZIP',
+        'deposit-manifest': 'Iemaksā Treasury par manifestu',
         'deposit-and-upload': 'Iemaksāt un augšupielādēt',
         'uploading': 'Augšupielādē...',
         'signing': 'Paraksti transakciju...',
@@ -64,7 +69,11 @@ const translations = {
         'download-key': '⬇️ Lejupielādēt',
         'key-title': '🔑 Tava Master Atslēga',
         'key-description': 'Šī ir TAVA vienīgā atslēga visiem backupiem. Saglabā to password managerī vai citā drošā vietā!',
-        'encrypted-required': 'Master Key ir obligāta!'
+        'encrypted-required': 'Master Key ir obligāta!',
+        'waiting': 'Gaida apstiprinājumu...',
+        'success': '✅ Veiksmīgi!',
+        'finish-btn': 'Pabeigt backupu',
+        'deposit-manifest-btn': 'Iemaksāt par manifestu un pabeigt'
     },
     en: {
         'backup-title': '📦 PermRepo Backups',
@@ -79,6 +88,7 @@ const translations = {
         'generate-key': 'Generating master key...',
         'enter-key': 'Enter your Master Key:',
         'deposit-files': 'Deposit to Treasury for ZIP',
+        'deposit-manifest': 'Deposit to Treasury for manifest',
         'deposit-and-upload': 'Deposit and upload',
         'uploading': 'Uploading...',
         'signing': 'Sign transaction...',
@@ -98,7 +108,11 @@ const translations = {
         'download-key': '⬇️ Download',
         'key-title': '🔑 Your Master Key',
         'key-description': 'This is YOUR only key for all backups. Save it in a password manager or other safe place!',
-        'encrypted-required': 'Master Key is required!'
+        'encrypted-required': 'Master Key is required!',
+        'waiting': 'Waiting for confirmation...',
+        'success': '✅ Success!',
+        'finish-btn': 'Finish backup',
+        'deposit-manifest-btn': 'Deposit for manifest and finish'
     },
     eo: {
         'backup-title': '📦 PermRepo Sekurkopioj',
@@ -113,6 +127,7 @@ const translations = {
         'generate-key': 'Generante ĉefŝlosilon...',
         'enter-key': 'Enigu vian Ĉefŝlosilon:',
         'deposit-files': 'Deponi al Treasury por ZIP',
+        'deposit-manifest': 'Deponi al Treasury por manifesto',
         'deposit-and-upload': 'Deponi kaj alŝuti',
         'uploading': 'Alŝutante...',
         'signing': 'Subskribante transakcion...',
@@ -132,7 +147,11 @@ const translations = {
         'download-key': '⬇️ Elŝuti',
         'key-title': '🔑 Via Ĉefŝlosilo',
         'key-description': 'Ĉi tiu estas VIA sola ŝlosilo por ĉiuj sekurkopioj. Konservu ĝin en pasvort-administrilo aŭ alia sekura loko!',
-        'encrypted-required': 'Ĉefŝlosilo estas deviga!'
+        'encrypted-required': 'Ĉefŝlosilo estas deviga!',
+        'waiting': 'Atendante konfirmon...',
+        'success': '✅ Sukceso!',
+        'finish-btn': 'Fini sekurkopion',
+        'deposit-manifest-btn': 'Deponi por manifesto kaj fini'
     }
 };
 
@@ -371,7 +390,7 @@ async function prepareBackup() {
         
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
-        button.onclick = executeBackup;
+        button.onclick = executeZipUpload;
         
     } catch (e) {
         showError(e.message);
@@ -381,10 +400,10 @@ async function prepareBackup() {
 }
 
 // ==================================================
-// EXECUTE BACKUP — MK OBLIGĀTA, PLAINTEXT NETIEK SŪTĪTS
+// 1. POSMS: ZIP APMAKSA + ZIP AUGŠUPIELĀDE
 // ==================================================
 
-async function executeBackup() {
+async function executeZipUpload() {
     const button = document.getElementById('startBackupButton');
     button.disabled = true;
     
@@ -405,7 +424,6 @@ async function executeBackup() {
             }
         }
         
-        // MK OBLIGĀTA
         if (!masterKey || !masterKey.trim()) {
             showError(t('encrypted-required'));
             button.disabled = false;
@@ -413,7 +431,7 @@ async function executeBackup() {
             return;
         }
         
-        // 2. ZIP IZVEIDE PĀRLŪKĀ
+        // 2. ZIP IZVEIDE
         setStatus(t('creating-zip'));
         
         const zip = new JSZip();
@@ -424,23 +442,21 @@ async function executeBackup() {
         
         const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
         
-        // 3. ŠIFRĒ PĀRLŪKĀ
+        // 3. ŠIFRĒ
         setStatus(t('encrypting'));
         
         const encrypted = await encryptData(zipBuffer, masterKey);
         const encryptedZipData = encrypted.encrypted;
-        const iv = encrypted.iv;
+        currentIV = encrypted.iv;
         
-        // 4. Merkle sakne — pārlūkā
-        const merkleRoot = calculateMerkleRoot(currentFiles);
-        
-        // 5. Metadata priekš servera — BEZ failu satura
-        const fileMetadata = currentFiles.map(file => ({
+        // 4. Merkle sakne un metadata
+        currentMerkleRoot = calculateMerkleRoot(currentFiles);
+        currentFileMetadata = currentFiles.map(file => ({
             path: file.path,
             hash: file.hash
         }));
         
-        // 6. IEMAKSA PAR ZIP
+        // 5. IEMAKSA PAR ZIP
         const fileCostWei = ethers.parseEther(currentFileCostEth);
         
         if (fileCostWei > 0n && !hasDepositedFiles) {
@@ -452,11 +468,14 @@ async function executeBackup() {
                 value: fileCostWei
             });
             
+            setStatus(t('waiting'));
             await tx.wait();
+            
+            setStatus(t('success'));
             hasDepositedFiles = true;
         }
         
-        // 7. AUGŠUPIELĀDE — TIKAI šifrētais ZIP + metadata
+        // 6. AUGŠUPIELĀDE ZIP
         setStatus(t('uploading'));
         
         const executeResponse = await fetch('/api/execute-backup', {
@@ -469,14 +488,8 @@ async function executeBackup() {
                 fileCostEth: currentFileCostEth,
                 newUserCredits: currentNewUserCredits,
                 encryptedZip: Array.from(encryptedZipData),
-                iv: Array.from(iv),
-                fileMetadata,
-                unchangedFiles: currentUnchangedFiles,
-                merkleRoot,
-                previousHistory: currentPreviousHistory,
-                previousManifestId: currentPreviousManifestId,
-                previousBackupNumber: currentPreviousBackupNumber,
-                previousEncryptionIVs: currentPreviousEncryptionIVs
+                iv: Array.from(currentIV),
+                fileMetadata: currentFileMetadata
             })
         });
         
@@ -489,7 +502,86 @@ async function executeBackup() {
             return;
         }
         
-        // 8. PARAKSTS
+        // 7. ATGRIEŽ ZIP TX ID — tagad jāiemaksā par manifestu
+        document.getElementById('status').innerHTML = 
+            `✅ ZIP augšupielādēts!<br><br>` +
+            `${t('manifest-cost')}: ${currentFileCostEth} ETH`;
+        
+        button.disabled = false;
+        button.textContent = t('deposit-manifest-btn');
+        button.onclick = () => finalizeManifest(executeResult.zipTxId, button);
+        
+    } catch (e) {
+        masterKey = null;
+        if (e.code === 'ACTION_REJECTED') {
+            showError(t('transaction-cancelled'));
+        } else {
+            showError(e.message);
+        }
+        button.disabled = false;
+        button.textContent = t('deposit-and-upload');
+    }
+}
+
+// ==================================================
+// 2. POSMS: MANIFESTA APMAKSA + AUGŠUPIELĀDE + PARAKSTS
+// ==================================================
+
+async function finalizeManifest(zipTxId, button) {
+    button.disabled = true;
+    
+    try {
+        // 1. IEMAKSA PAR MANIFESTU
+        const manifestCostWei = ethers.parseEther(currentFileCostEth);
+        
+        if (manifestCostWei > 0n && !hasDepositedManifest) {
+            setStatus(`${t('deposit-manifest')}: ${currentFileCostEth} ETH...`);
+            button.textContent = '⏳';
+            
+            const tx = await signer.sendTransaction({
+                to: CONFIG.treasuryAddress,
+                value: manifestCostWei
+            });
+            
+            setStatus(t('waiting'));
+            await tx.wait();
+            
+            setStatus(t('success'));
+            hasDepositedManifest = true;
+        }
+        
+        // 2. MANIFESTA AUGŠUPIELĀDE
+        setStatus(t('uploading'));
+        
+        const manifestResponse = await fetch('/api/finalize-manifest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                repoName: `${githubUser}/${repoName}`,
+                tokenId: tokenId.toString(),
+                walletAddress: userAddress,
+                manifestCostEth: currentFileCostEth,
+                zipTxId,
+                fileMetadata: currentFileMetadata,
+                unchangedFiles: currentUnchangedFiles,
+                previousHistory: currentPreviousHistory,
+                previousManifestId: currentPreviousManifestId,
+                previousBackupNumber: currentPreviousBackupNumber,
+                previousEncryptionIVs: currentPreviousEncryptionIVs,
+                iv: Array.from(currentIV)
+            })
+        });
+        
+        const manifestResult = await manifestResponse.json();
+        
+        if (!manifestResult.success) {
+            showError(manifestResult.error || 'Kļūda');
+            button.disabled = false;
+            button.textContent = t('try-again');
+            return;
+        }
+        
+        // 3. PARAKSTS
         setStatus(t('signing'));
         
         const provider = new ethers.BrowserProvider(window.ethereum);
@@ -499,7 +591,7 @@ async function executeBackup() {
         const currentNonce = await readContract.getNonce(tokenId);
         const onChainBackupCount = await readContract.getBackupCount(tokenId);
         
-        const manifestURI = `ar://${executeResult.manifestTxId}`;
+        const manifestURI = `ar://${manifestResult.manifestTxId}`;
         const manifestHash = ethers.keccak256(ethers.toUtf8Bytes(manifestURI));
         
         const domain = {
@@ -524,21 +616,20 @@ async function executeBackup() {
             tokenId: BigInt(tokenId),
             backupNumber: onChainBackupCount + 1n,
             manifestHash,
-            merkleRoot,
+            merkleRoot: currentMerkleRoot,
             deadline: BigInt(deadline),
             nonce: currentNonce
         };
         
         const signature = await signer.signTypedData(domain, types, value);
         
-        // 9. FINALIZE — TIKAI metadata, bez failu satura
         const finalizeResponse = await fetch('/api/finalize-backup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 tokenId: tokenId.toString(),
-                manifestTxId: executeResult.manifestTxId,
-                fileMetadata,
+                manifestTxId: manifestResult.manifestTxId,
+                fileMetadata: currentFileMetadata,
                 deadline,
                 signature
             })
@@ -547,15 +638,18 @@ async function executeBackup() {
         const finalizeResult = await finalizeResponse.json();
         
         if (finalizeResult.success) {
-            // NOTĪRA MK NO ATMIŅAS
             masterKey = null;
             
             button.style.display = 'none';
             
+            const totalCostEth = (parseFloat(currentFileCostEth) * 2).toFixed(18);
+            
             document.getElementById('status').innerHTML = 
                 `${t('backup-complete')}<br><br>` +
-                `${t('manifest-link')}: <a href="${CONFIG.arweaveGateway}/raw/${executeResult.manifestTxId}" target="_blank">ar://${executeResult.manifestTxId}</a><br>` +
-                `${t('file-cost')}: ${currentFileCostEth} ETH`;
+                `${t('manifest-link')}: <a href="${CONFIG.arweaveGateway}/raw/${manifestResult.manifestTxId}" target="_blank">ar://${manifestResult.manifestTxId}</a><br>` +
+                `${t('file-cost')}: ${currentFileCostEth} ETH<br>` +
+                `${t('manifest-cost')}: ${currentFileCostEth} ETH<br>` +
+                `${t('total-cost')}: ${totalCostEth} ETH`;
         } else {
             showError(finalizeResult.error || 'Kļūda');
             button.disabled = false;
@@ -564,14 +658,13 @@ async function executeBackup() {
         
     } catch (e) {
         masterKey = null;
-        
         if (e.code === 'ACTION_REJECTED') {
             showError(t('transaction-cancelled'));
         } else {
             showError(e.message);
         }
         button.disabled = false;
-        button.textContent = t('deposit-and-upload');
+        button.textContent = t('deposit-manifest-btn');
     }
 }
 
