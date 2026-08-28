@@ -130,6 +130,39 @@ function getGithubHash(githubUsername) {
     return ethers.keccak256(ethers.toUtf8Bytes(githubUsername));
 }
 
+async function getWincForBytes(turbo, byteSizes) {
+    if (!Array.isArray(byteSizes) || byteSizes.length === 0) {
+        return { totalWinc: 0n, perFileWinc: [] };
+    }
+    
+    const costs = await turbo.getUploadCosts({ bytes: byteSizes });
+    
+    let totalWinc = 0n;
+    const perFileWinc = [];
+    
+    for (let i = 0; i < costs.length; i++) {
+        const winc = BigInt(String(costs[i]?.winc || '0'));
+        perFileWinc.push(winc);
+        totalWinc += winc;
+    }
+    
+    return { totalWinc, perFileWinc };
+}
+
+async function getEthForBytes(turbo, totalBytes) {
+    if (totalBytes <= 0) return '0';
+    
+    try {
+        const { totalWinc } = await getWincForBytes(turbo, [totalBytes]);
+        if (totalWinc === 0n) return '0';
+    } catch (e) {
+        logWarning('getUploadCosts kļūda: ' + errorMessage(e));
+    }
+    
+    const { tokenPrice } = await turbo.getTokenPriceForBytes({ byteCount: totalBytes });
+    return String(tokenPrice);
+}
+
 async function getTurboPaymentAddress() {
     try {
         const response = await fetch(`${TURBO_PAYMENT_URL}/v1/info`);
@@ -313,7 +346,7 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 }
 
 // ==================================================
-// PREPARE BACKUP — precīzi Turbo izmaksu aprēķini + Redis
+// PREPARE BACKUP — ZIP izmaksas
 // ==================================================
 
 app.post('/api/prepare-backup', async (req, res) => {
@@ -334,13 +367,11 @@ app.post('/api/prepare-backup', async (req, res) => {
         const fullRepoName = `${githubUser}/${repoName}`;
         const provider = getProvider();
         
-        // 1. Abonements
         const subscriptionContract = new ethers.Contract(SUBSCRIPTION_ADDRESS, SUBSCRIPTION_ABI, provider);
         const githubHash = getGithubHash(githubUser);
         const isSubscribed = await subscriptionContract.isSubscribed(githubHash);
         if (!isSubscribed) return res.status(403).json({ success: false, error: 'Abonements nav aktīvs' });
         
-        // 2. NFT
         const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
         const repoHash = getRepositoryHash(fullRepoName);
         const tokenId = await nftContract.repositoryTokens(repoHash);
@@ -351,7 +382,6 @@ app.post('/api/prepare-backup', async (req, res) => {
             return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
         }
         
-        // 3. Iepriekšējais manifests
         const backupCount = Number(await nftContract.getBackupCount(tokenId));
         
         let previousPaths = {};
@@ -379,11 +409,9 @@ app.post('/api/prepare-backup', async (req, res) => {
             }
         }
         
-        // 4. Pašreizējie faili
         const currentFiles = await getRepoFiles(githubToken, githubUser, repoName);
         if (currentFiles.length === 0) return res.status(400).json({ success: false, error: 'Nav failu repo' });
         
-        // 5. Salīdzina
         const changedFiles = [];
         const unchangedFiles = {};
         
@@ -412,7 +440,6 @@ app.post('/api/prepare-backup', async (req, res) => {
         const totalFileBytes = changedFiles.reduce((sum, file) => sum + file.size, 0);
         const estimatedZipSize = Math.ceil(totalFileBytes * 1.1);
         
-        // 6. PRECĪZI Turbo izmaksu aprēķini
         const turbo = getTurbo();
         
         logSection('⚡ TURBO IZMAKSU APRĒĶINS');
@@ -420,17 +447,14 @@ app.post('/api/prepare-backup', async (req, res) => {
         logInfo('Failu izmērs', totalFileBytes + ' bytes');
         logInfo('ZIP izmērs (aptuveni)', estimatedZipSize + ' bytes');
         
-        // winc no getUploadCosts
         const costs = await turbo.getUploadCosts({ bytes: [estimatedZipSize] });
         const fileWinc = BigInt(String(costs[0]?.winc || '0'));
         logInfo('Winc izmaksas', fileWinc.toString());
         
-        // Base ETH cena no getTokenPriceForBytes
         const { tokenPrice } = await turbo.getTokenPriceForBytes({ byteCount: estimatedZipSize });
         const fileCostEth = String(tokenPrice);
         logInfo('Base ETH cena', fileCostEth + ' ETH');
         
-        // 7. Redis kredītu pārbaude
         const userCredits = await getUserCredits(walletAddress);
         
         logSection('💰 REDIS GRĀMATVEDĪBA');
@@ -519,7 +543,6 @@ app.post('/api/execute-backup', async (req, res) => {
         const zipBuffer = Buffer.from(encryptedZip);
         logInfo('Šifrētā ZIP izmērs', zipBuffer.length + ' bytes');
         
-        // Redis kredītu pārbaude
         const userCredits = await getUserCredits(walletAddress);
         const fileWincBig = BigInt(fileWinc || '0');
         
@@ -532,7 +555,6 @@ app.post('/api/execute-backup', async (req, res) => {
             logInfo('Izmanto Redis kredītus', creditsToUse.toString() + ' winc');
         }
         
-        // 1. ZIP APMAKSA
         const fileCostWei = ethers.parseEther(fileCostEth || '0');
         
         logSection('💳 ZIP APMAKSA');
@@ -557,12 +579,10 @@ app.post('/api/execute-backup', async (req, res) => {
             await new Promise(resolve => setTimeout(resolve, 5000));
         } else if (useCredits) {
             logSuccess('Izmanto Redis kredītus — nav iemaksas');
-            logInfo('Kredīti izmantoti', creditsToUse.toString() + ' winc');
         } else {
             logSuccess('Bezmaksas augšupielāde');
         }
         
-        // 2. ZIP AUGŠUPIELĀDE
         try {
             const zipResult = await turbo.uploadFile({
                 fileStreamFactory: () => Readable.from(zipBuffer),
@@ -581,7 +601,6 @@ app.post('/api/execute-backup', async (req, res) => {
             
             logSuccess(`ZIP TX ID: ${zipResult.id}`);
             
-            // Veiksmīga augšupielāde — atjaunina Redis kredītus
             if (useCredits) {
                 const remainingCredits = userCredits - creditsToUse;
                 await setUserCredits(walletAddress, remainingCredits);
@@ -596,7 +615,6 @@ app.post('/api/execute-backup', async (req, res) => {
             });
             
         } catch (uploadError) {
-            // AUGŠUPIELĀDE NEIZDEVĀS — kredīti paliek
             logSection('⚠️ AUGŠUPIELĀDE NEIZDEVĀS');
             logError(errorMessage(uploadError));
             
@@ -622,21 +640,20 @@ app.post('/api/execute-backup', async (req, res) => {
 });
 
 // ==================================================
-// FINALIZE MANIFEST — 2. POSMS
+// FINALIZE MANIFEST — 2. POSMS: Manifesta apmaksa + augšupielāde
 // ==================================================
 
 app.post('/api/finalize-manifest', async (req, res) => {
     try {
         const { 
-            repoName, tokenId, walletAddress, manifestCostEth, zipTxId, 
+            repoName, tokenId, walletAddress, zipTxId, 
             fileMetadata, unchangedFiles, previousHistory, previousManifestId, 
-            previousBackupNumber, previousEncryptionIVs, iv, manifestWinc
+            previousBackupNumber, previousEncryptionIVs, iv
         } = req.body;
         
         logSection('📤 2. POSMS: MANIFESTS');
         logInfo('Repo', repoName);
         logInfo('Token ID', tokenId);
-        logInfo('Manifesta izmaksas', manifestCostEth + ' ETH');
         
         if (!repoName) return res.status(400).json({ success: false, error: 'Nav repoName' });
         if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav walletAddress' });
@@ -652,47 +669,7 @@ app.post('/api/finalize-manifest', async (req, res) => {
         
         const turbo = getTurbo();
         
-        // Redis kredītu pārbaude manifestam
-        const userCredits = await getUserCredits(walletAddress);
-        const manifestWincBig = BigInt(manifestWinc || '0');
-        
-        let useCredits = false;
-        let creditsToUse = 0n;
-        
-        if (userCredits > 0n && manifestWincBig > 0n && userCredits >= manifestWincBig) {
-            creditsToUse = manifestWincBig;
-            useCredits = true;
-            logInfo('Izmanto Redis kredītus', creditsToUse.toString() + ' winc');
-        }
-        
-        // 1. MANIFESTA APMAKSA
-        const manifestCostWei = ethers.parseEther(manifestCostEth || '0');
-        
-        logSection('💳 MANIFESTA APMAKSA');
-        if (manifestCostWei > 0n && !useCredits) {
-            const turboAddress = await getTurboPaymentAddress();
-            const operatorWallet = getOperatorWallet(provider);
-            const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
-            
-            const treasuryRead = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, provider);
-            const isOp = await treasuryRead.isOperator(operatorWallet.address);
-            if (!isOp) return res.status(500).json({ success: false, error: 'Operators nav atļauts' });
-            
-            const paymentId = ethers.id(repoName + '-manifest-' + Date.now().toString());
-            const payTx = await treasuryWrite.payTurbo(manifestCostWei, paymentId, turboAddress);
-            await payTx.wait();
-            
-            logSuccess('Manifesta transakcija: ' + payTx.hash);
-            logInfo('Payment ID', paymentId);
-            logInfo('Destination', turboAddress);
-            logInfo('Summa', manifestCostEth + ' Base ETH');
-            
-            await new Promise(resolve => setTimeout(resolve, 5000));
-        } else if (useCredits) {
-            logSuccess('Izmanto Redis kredītus manifestam');
-        }
-        
-        // 2. MANIFESTA IZVEIDE
+        // 1. MANIFESTA IZVEIDE
         const backupCount = Number(await nftContract.getBackupCount(tokenId));
         const newBackupNumber = backupCount + 1;
         
@@ -752,13 +729,71 @@ app.post('/api/finalize-manifest', async (req, res) => {
         }
         
         const manifestBuffer = Buffer.from(JSON.stringify(manifest), 'utf8');
-        logInfo('Manifesta izmērs', manifestBuffer.length + ' bytes');
+        const manifestSize = manifestBuffer.length;
         
-        // 3. MANIFESTA AUGŠUPIELĀDE
+        logSection('📄 MANIFESTA IZMĒRS');
+        logInfo('Faktiskais izmērs', manifestSize + ' bytes');
+        logInfo('Faktiskais izmērs (KB)', (manifestSize / 1024).toFixed(2) + ' KB');
+        
+        // 2. PRECĪZAS MANIFESTA IZMAKSAS no faktiskā izmēra
+        const costs = await turbo.getUploadCosts({ bytes: [manifestSize] });
+        const manifestWinc = BigInt(String(costs[0]?.winc || '0'));
+        logInfo('Winc izmaksas', manifestWinc.toString());
+        
+        const { tokenPrice } = await turbo.getTokenPriceForBytes({ byteCount: manifestSize });
+        const manifestCostEth = String(tokenPrice);
+        logInfo('Base ETH cena', manifestCostEth + ' ETH');
+        
+        // 3. Redis kredītu pārbaude
+        const userCredits = await getUserCredits(walletAddress);
+        
+        logSection('💰 REDIS GRĀMATVEDĪBA');
+        logInfo('Lietotāja kredīti', userCredits.toString() + ' winc');
+        logInfo('Nepieciešamie winc', manifestWinc.toString() + ' winc');
+        
+        let useCredits = false;
+        let creditsToUse = 0n;
+        
+        if (userCredits >= manifestWinc && manifestWinc > 0n) {
+            creditsToUse = manifestWinc;
+            useCredits = true;
+            logSuccess('Pietiek kredītu manifestam');
+        } else {
+            logInfo('Nepietiek kredītu', 'Jāiemaksā ' + manifestCostEth + ' Base ETH');
+        }
+        
+        // 4. MANIFESTA APMAKSA
+        const manifestCostWei = ethers.parseEther(manifestCostEth);
+        
+        logSection('💳 MANIFESTA APMAKSA');
+        if (manifestCostWei > 0n && !useCredits) {
+            const turboAddress = await getTurboPaymentAddress();
+            const operatorWallet = getOperatorWallet(provider);
+            const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
+            
+            const treasuryRead = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, provider);
+            const isOp = await treasuryRead.isOperator(operatorWallet.address);
+            if (!isOp) return res.status(500).json({ success: false, error: 'Operators nav atļauts' });
+            
+            const paymentId = ethers.id(repoName + '-manifest-' + Date.now().toString());
+            const payTx = await treasuryWrite.payTurbo(manifestCostWei, paymentId, turboAddress);
+            await payTx.wait();
+            
+            logSuccess('Manifesta transakcija: ' + payTx.hash);
+            logInfo('Payment ID', paymentId);
+            logInfo('Destination', turboAddress);
+            logInfo('Summa', manifestCostEth + ' Base ETH');
+            
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        } else if (useCredits) {
+            logSuccess('Izmanto Redis kredītus manifestam');
+        }
+        
+        // 5. MANIFESTA AUGŠUPIELĀDE
         try {
             const manifestResult = await turbo.uploadFile({
                 fileStreamFactory: () => Readable.from(manifestBuffer),
-                fileSizeFactory: () => manifestBuffer.length,
+                fileSizeFactory: () => manifestSize,
                 dataItemOpts: {
                     tags: [
                         { name: 'App-Name', value: 'PermRepo' },
@@ -772,7 +807,6 @@ app.post('/api/finalize-manifest', async (req, res) => {
             
             logSuccess(`MANIFEST TX ID: ${manifestResult.id}`);
             
-            // Veiksmīga manifesta augšupielāde — atjaunina Redis kredītus
             if (useCredits) {
                 const remainingCredits = userCredits - creditsToUse;
                 await setUserCredits(walletAddress, remainingCredits);
@@ -783,6 +817,8 @@ app.post('/api/finalize-manifest', async (req, res) => {
                 success: true,
                 manifestTxId: manifestResult.id,
                 manifest,
+                manifestCostEth,
+                manifestWinc: manifestWinc.toString(),
                 backupNumber: newBackupNumber
             });
             
@@ -794,7 +830,7 @@ app.post('/api/finalize-manifest', async (req, res) => {
                 await setUserCredits(walletAddress, userCredits);
                 logInfo('Redis kredīti atjaunoti', userCredits.toString() + ' winc');
             } else if (manifestCostWei > 0n) {
-                const newRedisCredits = userCredits + manifestWincBig;
+                const newRedisCredits = userCredits + manifestWinc;
                 await setUserCredits(walletAddress, newRedisCredits);
                 logInfo('Kredīti reģistrēti Redis', newRedisCredits.toString() + ' winc');
                 logWarning('Šos kredītus lietotājs var izmantot nākamajā backupā');
