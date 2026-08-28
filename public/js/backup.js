@@ -10,6 +10,7 @@ let tokenId = null;
 let githubUser = null;
 let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
 let currentFileCostEth = '0';
+let currentFileWinc = '0';
 let currentNewUserCredits = '0';
 let masterKey = null;
 let currentUnchangedFiles = {};
@@ -179,10 +180,6 @@ function applyTranslations() {
     });
 }
 
-// ==================================================
-// IZMĒRA FORMĀTS — B, KB, MB
-// ==================================================
-
 function formatFileSize(bytes) {
     if (bytes < 1024) {
         return bytes + ' B';
@@ -348,7 +345,7 @@ function showMasterKey(masterKey) {
 }
 
 // ==================================================
-// PREPARE BACKUP — parāda precīzu izmēru
+// PREPARE BACKUP
 // ==================================================
 
 async function prepareBackup() {
@@ -377,6 +374,7 @@ async function prepareBackup() {
         currentUnchangedFiles = result.unchangedFiles || {};
         currentFiles = result.files || [];
         currentFileCostEth = result.fileCostEth || '0';
+        currentFileWinc = result.fileWinc || '0';
         currentNewUserCredits = result.newUserCredits || '0';
         currentPreviousHistory = result.previousHistory || [];
         currentPreviousManifestId = result.previousManifestId || null;
@@ -390,7 +388,6 @@ async function prepareBackup() {
             return;
         }
         
-        // PAREIZS IZMĒRA FORMĀTS
         const totalBytes = result.totalBytes || 0;
         const sizeText = formatFileSize(totalBytes);
         
@@ -419,6 +416,8 @@ async function executeZipUpload() {
     button.disabled = true;
     
     try {
+        const files = currentFiles;
+        
         // 1. MASTER KEY
         const backupCount = await getBackupCountFromChain();
         
@@ -446,7 +445,7 @@ async function executeZipUpload() {
         setStatus(t('creating-zip'));
         
         const zip = new JSZip();
-        for (const file of currentFiles) {
+        for (const file of files) {
             const fileBuffer = Uint8Array.from(atob(file.content), c => c.charCodeAt(0));
             zip.file(file.path, fileBuffer);
         }
@@ -461,8 +460,8 @@ async function executeZipUpload() {
         currentIV = encrypted.iv;
         
         // 4. Merkle sakne un metadata
-        currentMerkleRoot = calculateMerkleRoot(currentFiles);
-        currentFileMetadata = currentFiles.map(file => ({
+        currentMerkleRoot = calculateMerkleRoot(files);
+        currentFileMetadata = files.map(file => ({
             path: file.path,
             hash: file.hash
         }));
@@ -501,7 +500,7 @@ async function executeZipUpload() {
                 encryptedZip: Array.from(encryptedZipData),
                 iv: Array.from(currentIV),
                 fileMetadata: currentFileMetadata,
-                fileWinc: result.fileWinc || '0'
+                fileWinc: currentFileWinc
             })
         });
         
@@ -578,7 +577,7 @@ async function finalizeManifest(zipTxId, button) {
                 previousBackupNumber: currentPreviousBackupNumber,
                 previousEncryptionIVs: currentPreviousEncryptionIVs,
                 iv: Array.from(currentIV),
-                manifestWinc: result.fileWinc || '0'
+                manifestWinc: currentFileWinc
             })
         });
         
