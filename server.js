@@ -130,55 +130,6 @@ function getGithubHash(githubUsername) {
     return ethers.keccak256(ethers.toUtf8Bytes(githubUsername));
 }
 
-async function getWincForBytes(turbo, byteSizes) {
-    if (!Array.isArray(byteSizes) || byteSizes.length === 0) {
-        return { totalWinc: 0n, perFileWinc: [] };
-    }
-    
-    const costs = await turbo.getUploadCosts({ bytes: byteSizes });
-    
-    let totalWinc = 0n;
-    const perFileWinc = [];
-    
-    for (let i = 0; i < costs.length; i++) {
-        const winc = BigInt(String(costs[i]?.winc || '0'));
-        perFileWinc.push(winc);
-        totalWinc += winc;
-    }
-    
-    return { totalWinc, perFileWinc };
-}
-
-async function getEthForBytes(turbo, totalBytes) {
-    if (totalBytes <= 0) return '0';
-    
-    try {
-        const { totalWinc } = await getWincForBytes(turbo, [totalBytes]);
-        if (totalWinc === 0n) return '0';
-    } catch (e) {
-        logWarning('getUploadCosts kļūda: ' + errorMessage(e));
-    }
-    
-    const { tokenPrice } = await turbo.getTokenPriceForBytes({ byteCount: totalBytes });
-    return String(tokenPrice);
-}
-
-// Pārvērš winc uz ETH
-async function getEthForWinc(turbo, wincAmount) {
-    if (wincAmount <= 0n) return '0';
-    
-    // Izmanto 1 bytes cenu kā bāzi un reizina ar winc attiecību
-    const { tokenPrice } = await turbo.getTokenPriceForBytes({ byteCount: 1 });
-    const oneByteCost = ethers.parseEther(String(tokenPrice));
-    
-    // Aprēķina aptuveno byte skaitu no winc
-    // Vienkāršots aprēķins — var pielāgot pēc vajadzības
-    const estimatedBytes = Math.ceil(Number(wincAmount));
-    const totalCost = ethers.parseEther(String(tokenPrice)) * BigInt(estimatedBytes);
-    
-    return ethers.formatEther(totalCost);
-}
-
 async function getTurboPaymentAddress() {
     try {
         const response = await fetch(`${TURBO_PAYMENT_URL}/v1/info`);
@@ -362,7 +313,7 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 }
 
 // ==================================================
-// PREPARE BACKUP — ar Redis kredītu pārbaudi un starpības aprēķinu
+// PREPARE BACKUP — precīzi Turbo izmaksu aprēķini + Redis
 // ==================================================
 
 app.post('/api/prepare-backup', async (req, res) => {
@@ -383,11 +334,13 @@ app.post('/api/prepare-backup', async (req, res) => {
         const fullRepoName = `${githubUser}/${repoName}`;
         const provider = getProvider();
         
+        // 1. Abonements
         const subscriptionContract = new ethers.Contract(SUBSCRIPTION_ADDRESS, SUBSCRIPTION_ABI, provider);
         const githubHash = getGithubHash(githubUser);
         const isSubscribed = await subscriptionContract.isSubscribed(githubHash);
         if (!isSubscribed) return res.status(403).json({ success: false, error: 'Abonements nav aktīvs' });
         
+        // 2. NFT
         const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
         const repoHash = getRepositoryHash(fullRepoName);
         const tokenId = await nftContract.repositoryTokens(repoHash);
@@ -398,6 +351,7 @@ app.post('/api/prepare-backup', async (req, res) => {
             return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
         }
         
+        // 3. Iepriekšējais manifests
         const backupCount = Number(await nftContract.getBackupCount(tokenId));
         
         let previousPaths = {};
@@ -425,9 +379,11 @@ app.post('/api/prepare-backup', async (req, res) => {
             }
         }
         
+        // 4. Pašreizējie faili
         const currentFiles = await getRepoFiles(githubToken, githubUser, repoName);
         if (currentFiles.length === 0) return res.status(400).json({ success: false, error: 'Nav failu repo' });
         
+        // 5. Salīdzina
         const changedFiles = [];
         const unchangedFiles = {};
         
@@ -456,35 +412,44 @@ app.post('/api/prepare-backup', async (req, res) => {
         const totalFileBytes = changedFiles.reduce((sum, file) => sum + file.size, 0);
         const estimatedZipSize = Math.ceil(totalFileBytes * 1.1);
         
+        // 6. PRECĪZI Turbo izmaksu aprēķini
         const turbo = getTurbo();
-        const { totalWinc: fileWinc } = await getWincForBytes(turbo, [estimatedZipSize]);
         
-        // Redis kredītu pārbaude un starpības aprēķins
+        logSection('⚡ TURBO IZMAKSU APRĒĶINS');
+        logInfo('Failu skaits', changedFiles.length);
+        logInfo('Failu izmērs', totalFileBytes + ' bytes');
+        logInfo('ZIP izmērs (aptuveni)', estimatedZipSize + ' bytes');
+        
+        // winc no getUploadCosts
+        const costs = await turbo.getUploadCosts({ bytes: [estimatedZipSize] });
+        const fileWinc = BigInt(String(costs[0]?.winc || '0'));
+        logInfo('Winc izmaksas', fileWinc.toString());
+        
+        // Base ETH cena no getTokenPriceForBytes
+        const { tokenPrice } = await turbo.getTokenPriceForBytes({ byteCount: estimatedZipSize });
+        const fileCostEth = String(tokenPrice);
+        logInfo('Base ETH cena', fileCostEth + ' ETH');
+        
+        // 7. Redis kredītu pārbaude
         const userCredits = await getUserCredits(walletAddress);
-        const fileWincBig = fileWinc;
         
-        logSection('💰 GRĀMATVEDĪBA');
-        logInfo('Lietotāja kredīti (Redis)', userCredits.toString() + ' winc');
-        logInfo('Nepieciešamie winc', fileWincBig.toString() + ' winc');
+        logSection('💰 REDIS GRĀMATVEDĪBA');
+        logInfo('Lietotāja kredīti', userCredits.toString() + ' winc');
+        logInfo('Nepieciešamie winc', fileWinc.toString() + ' winc');
         
         let newUserCredits;
         let fileCostEthForUser;
         
-        if (userCredits >= fileWincBig) {
-            // Pietiek kredītu — nav jāiemaksā
-            newUserCredits = userCredits - fileWincBig;
+        if (userCredits >= fileWinc) {
+            newUserCredits = userCredits - fileWinc;
             fileCostEthForUser = '0';
             logSuccess('Pietiek kredītu! Nav jāiemaksā');
-            logInfo('Atlikums pēc', newUserCredits.toString() + ' winc');
+            logInfo('Atlikums pēc backupa', newUserCredits.toString() + ' winc');
         } else {
-            // Nepietiek kredītu — jāiemaksā tikai starpība
-            const deficitWinc = fileWincBig - userCredits;
-            logInfo('Trūkst', deficitWinc.toString() + ' winc');
-            
-            // Pārvērš deficitWinc uz ETH
-            fileCostEthForUser = await getEthForWinc(turbo, deficitWinc);
             newUserCredits = 0n;
-            logInfo('Jāiemaksā', fileCostEthForUser + ' ETH');
+            fileCostEthForUser = fileCostEth;
+            logInfo('Nepietiek kredītu', 'Jāiemaksā pilna summa');
+            logInfo('Jāiemaksā', fileCostEthForUser + ' Base ETH');
         }
         
         res.json({
@@ -554,30 +519,24 @@ app.post('/api/execute-backup', async (req, res) => {
         const zipBuffer = Buffer.from(encryptedZip);
         logInfo('Šifrētā ZIP izmērs', zipBuffer.length + ' bytes');
         
-        // Pārbauda kredītus
+        // Redis kredītu pārbaude
         const userCredits = await getUserCredits(walletAddress);
         const fileWincBig = BigInt(fileWinc || '0');
         
         let useCredits = false;
         let creditsToUse = 0n;
         
-        if (userCredits > 0n && fileWincBig > 0n) {
-            if (userCredits >= fileWincBig) {
-                creditsToUse = fileWincBig;
-                useCredits = true;
-            } else {
-                creditsToUse = userCredits;
-                useCredits = true;
-            }
-            
+        if (userCredits > 0n && fileWincBig > 0n && userCredits >= fileWincBig) {
+            creditsToUse = fileWincBig;
+            useCredits = true;
             logInfo('Izmanto Redis kredītus', creditsToUse.toString() + ' winc');
         }
         
-        // 1. ZIP APMAKSA — iemaksā tikai starpību
+        // 1. ZIP APMAKSA
         const fileCostWei = ethers.parseEther(fileCostEth || '0');
         
         logSection('💳 ZIP APMAKSA');
-        if (fileCostWei > 0n) {
+        if (fileCostWei > 0n && !useCredits) {
             const turboAddress = await getTurboPaymentAddress();
             const operatorWallet = getOperatorWallet(provider);
             const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
@@ -591,9 +550,14 @@ app.post('/api/execute-backup', async (req, res) => {
             await payTx.wait();
             
             logSuccess('ZIP transakcija: ' + payTx.hash);
+            logInfo('Payment ID', paymentId);
+            logInfo('Destination', turboAddress);
+            logInfo('Summa', fileCostEth + ' Base ETH');
+            
             await new Promise(resolve => setTimeout(resolve, 5000));
         } else if (useCredits) {
             logSuccess('Izmanto Redis kredītus — nav iemaksas');
+            logInfo('Kredīti izmantoti', creditsToUse.toString() + ' winc');
         } else {
             logSuccess('Bezmaksas augšupielāde');
         }
@@ -637,11 +601,9 @@ app.post('/api/execute-backup', async (req, res) => {
             logError(errorMessage(uploadError));
             
             if (useCredits) {
-                // Kredīti bija no Redis — tie paliek
                 await setUserCredits(walletAddress, userCredits);
                 logInfo('Redis kredīti atjaunoti', userCredits.toString() + ' winc');
             } else if (fileCostWei > 0n) {
-                // Iemaksa tika veikta, bet augšupielāde neizdevās — kredīti uzkrājas
                 const newRedisCredits = userCredits + fileWincBig;
                 await setUserCredits(walletAddress, newRedisCredits);
                 logInfo('Kredīti reģistrēti Redis', newRedisCredits.toString() + ' winc');
@@ -690,19 +652,15 @@ app.post('/api/finalize-manifest', async (req, res) => {
         
         const turbo = getTurbo();
         
-        // Pārbauda kredītus manifestam
+        // Redis kredītu pārbaude manifestam
         const userCredits = await getUserCredits(walletAddress);
         const manifestWincBig = BigInt(manifestWinc || '0');
         
         let useCredits = false;
         let creditsToUse = 0n;
         
-        if (userCredits > 0n && manifestWincBig > 0n) {
-            if (userCredits >= manifestWincBig) {
-                creditsToUse = manifestWincBig;
-            } else {
-                creditsToUse = userCredits;
-            }
+        if (userCredits > 0n && manifestWincBig > 0n && userCredits >= manifestWincBig) {
+            creditsToUse = manifestWincBig;
             useCredits = true;
             logInfo('Izmanto Redis kredītus', creditsToUse.toString() + ' winc');
         }
@@ -711,7 +669,7 @@ app.post('/api/finalize-manifest', async (req, res) => {
         const manifestCostWei = ethers.parseEther(manifestCostEth || '0');
         
         logSection('💳 MANIFESTA APMAKSA');
-        if (manifestCostWei > 0n) {
+        if (manifestCostWei > 0n && !useCredits) {
             const turboAddress = await getTurboPaymentAddress();
             const operatorWallet = getOperatorWallet(provider);
             const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
@@ -725,6 +683,10 @@ app.post('/api/finalize-manifest', async (req, res) => {
             await payTx.wait();
             
             logSuccess('Manifesta transakcija: ' + payTx.hash);
+            logInfo('Payment ID', paymentId);
+            logInfo('Destination', turboAddress);
+            logInfo('Summa', manifestCostEth + ' Base ETH');
+            
             await new Promise(resolve => setTimeout(resolve, 5000));
         } else if (useCredits) {
             logSuccess('Izmanto Redis kredītus manifestam');
@@ -835,6 +797,7 @@ app.post('/api/finalize-manifest', async (req, res) => {
                 const newRedisCredits = userCredits + manifestWincBig;
                 await setUserCredits(walletAddress, newRedisCredits);
                 logInfo('Kredīti reģistrēti Redis', newRedisCredits.toString() + ' winc');
+                logWarning('Šos kredītus lietotājs var izmantot nākamajā backupā');
             }
             
             return res.status(500).json({ success: false, error: 'Manifesta augšupielāde neizdevās' });
