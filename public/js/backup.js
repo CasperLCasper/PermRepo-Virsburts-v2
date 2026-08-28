@@ -43,7 +43,7 @@ const translations = {
         'preparing': 'Sagatavo backupu...',
         'no-changes': '✅ Nav izmaiņu — visi faili jau ir backupēti!',
         'generate-key': 'Ģenerē master atslēgu...',
-        'enter-key': 'Ievadi savu master atslēgu (atstāj tukšu publiskam repo):',
+        'enter-key': 'Ievadi savu Master Key:',
         'deposit-files': 'Iemaksā Treasury par ZIP',
         'deposit-and-upload': 'Iemaksāt un augšupielādēt',
         'uploading': 'Augšupielādē...',
@@ -63,8 +63,8 @@ const translations = {
         'copy-key': '📋 Kopēt',
         'download-key': '⬇️ Lejupielādēt',
         'key-title': '🔑 Tava Master Atslēga',
-        'key-description': 'Šī ir TAVA vienīgā atslēga visiem backupiem. Saglabā to drošā vietā!',
-        'encrypted-required': 'Šifrēts ZIP ir obligāts! Ievadi master atslēgu.'
+        'key-description': 'Šī ir TAVA vienīgā atslēga visiem backupiem. Saglabā to password managerī vai citā drošā vietā!',
+        'encrypted-required': 'Master Key ir obligāta!'
     },
     en: {
         'backup-title': '📦 PermRepo Backups',
@@ -77,7 +77,7 @@ const translations = {
         'preparing': 'Preparing backup...',
         'no-changes': '✅ No changes — all files already backed up!',
         'generate-key': 'Generating master key...',
-        'enter-key': 'Enter your master key (leave empty for public repo):',
+        'enter-key': 'Enter your Master Key:',
         'deposit-files': 'Deposit to Treasury for ZIP',
         'deposit-and-upload': 'Deposit and upload',
         'uploading': 'Uploading...',
@@ -97,8 +97,8 @@ const translations = {
         'copy-key': '📋 Copy',
         'download-key': '⬇️ Download',
         'key-title': '🔑 Your Master Key',
-        'key-description': 'This is YOUR only key for all backups. Save it in a safe place!',
-        'encrypted-required': 'Encrypted ZIP is required! Enter master key.'
+        'key-description': 'This is YOUR only key for all backups. Save it in a password manager or other safe place!',
+        'encrypted-required': 'Master Key is required!'
     },
     eo: {
         'backup-title': '📦 PermRepo Sekurkopioj',
@@ -111,7 +111,7 @@ const translations = {
         'preparing': 'Preparante sekurkopion...',
         'no-changes': '✅ Neniu ŝanĝo — ĉiuj dosieroj jam sekurkopiitaj!',
         'generate-key': 'Generante ĉefŝlosilon...',
-        'enter-key': 'Enigu vian ĉefŝlosilon (lasu malplena por publika deponejo):',
+        'enter-key': 'Enigu vian Ĉefŝlosilon:',
         'deposit-files': 'Deponi al Treasury por ZIP',
         'deposit-and-upload': 'Deponi kaj alŝuti',
         'uploading': 'Alŝutante...',
@@ -131,8 +131,8 @@ const translations = {
         'copy-key': '📋 Kopii',
         'download-key': '⬇️ Elŝuti',
         'key-title': '🔑 Via Ĉefŝlosilo',
-        'key-description': 'Ĉi tiu estas VIA sola ŝlosilo por ĉiuj sekurkopioj. Konservu ĝin en sekura loko!',
-        'encrypted-required': 'Ĉifrita ZIP estas deviga! Enigu ĉefŝlosilon.'
+        'key-description': 'Ĉi tiu estas VIA sola ŝlosilo por ĉiuj sekurkopioj. Konservu ĝin en pasvort-administrilo aŭ alia sekura loko!',
+        'encrypted-required': 'Ĉefŝlosilo estas deviga!'
     }
 };
 
@@ -263,46 +263,13 @@ async function loadNFTInfo() {
     }
 }
 
-async function generateMasterKey(walletAddress, repoName, tokenId, githubUser) {
-    const cryptoRandom = new Uint8Array(64);
-    crypto.getRandomValues(cryptoRandom);
-    
-    const ethersRandom = ethers.randomBytes(64);
-    
-    const message = [
-        'PermRepo Master Key',
-        `GitHub: ${githubUser}`,
-        `Repo: ${repoName}`,
-        `Token: ${tokenId}`,
-        `Wallet: ${walletAddress}`,
-        `Time: ${Date.now()}`,
-        `Nonce: ${Math.random().toString(36)}`
-    ].join('\n');
-    
-    const signature = await signer.signMessage(message);
-    
-    const allEntropy = ethers.concat([
-        cryptoRandom,
-        ethersRandom,
-        ethers.getBytes(signature),
-        ethers.toUtf8Bytes(walletAddress),
-        ethers.toUtf8Bytes(githubUser),
-        ethers.toUtf8Bytes(repoName),
-        ethers.toUtf8Bytes(tokenId.toString())
-    ]);
-    
-    let masterKey = ethers.keccak256(allEntropy);
-    
-    for (let i = 0; i < 1000; i++) {
-        masterKey = ethers.keccak256(
-            ethers.concat([
-                masterKey,
-                ethers.toUtf8Bytes(i.toString())
-            ])
-        );
-    }
-    
-    return masterKey;
+// ==================================================
+// MASTER KEY — VIENKĀRŠA ĢENERĒŠANA
+// ==================================================
+
+async function generateMasterKey() {
+    const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+    return ethers.hexlify(keyBytes);
 }
 
 function showMasterKey(masterKey) {
@@ -351,6 +318,10 @@ function showMasterKey(masterKey) {
         };
     });
 }
+
+// ==================================================
+// PREPARE BACKUP
+// ==================================================
 
 async function prepareBackup() {
     const button = document.getElementById('startBackupButton');
@@ -409,22 +380,23 @@ async function prepareBackup() {
     }
 }
 
+// ==================================================
+// EXECUTE BACKUP — MK OBLIGĀTA, PLAINTEXT NETIEK SŪTĪTS
+// ==================================================
+
 async function executeBackup() {
     const button = document.getElementById('startBackupButton');
     button.disabled = true;
     
     try {
-        const files = currentFiles;
-        
-        // 1. MASTER KEY — OBLIGĀTA
+        // 1. MASTER KEY
         const backupCount = await getBackupCountFromChain();
         
         if (backupCount === 0) {
             setStatus(t('generate-key'));
             button.textContent = '⏳';
             
-            const fullRepoName = `${githubUser}/${repoName}`;
-            masterKey = await generateMasterKey(userAddress, fullRepoName, tokenId, githubUser);
+            masterKey = await generateMasterKey();
             await showMasterKey(masterKey);
         } else {
             masterKey = prompt(t('enter-key'));
@@ -433,7 +405,7 @@ async function executeBackup() {
             }
         }
         
-        // MK OBLIGĀTA — bez tās nevar turpināt
+        // MK OBLIGĀTA
         if (!masterKey || !masterKey.trim()) {
             showError(t('encrypted-required'));
             button.disabled = false;
@@ -441,25 +413,34 @@ async function executeBackup() {
             return;
         }
         
-        // 2. ZIP IZVEIDE
+        // 2. ZIP IZVEIDE PĀRLŪKĀ
         setStatus(t('creating-zip'));
         
         const zip = new JSZip();
-        for (const file of files) {
+        for (const file of currentFiles) {
             const fileBuffer = Uint8Array.from(atob(file.content), c => c.charCodeAt(0));
             zip.file(file.path, fileBuffer);
         }
         
         const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
         
-        // 3. ŠIFRĒ — TIKAI pārlūkā
+        // 3. ŠIFRĒ PĀRLŪKĀ
         setStatus(t('encrypting'));
         
         const encrypted = await encryptData(zipBuffer, masterKey);
         const encryptedZipData = encrypted.encrypted;
         const iv = encrypted.iv;
         
-        // 4. IEMAKSA PAR ZIP
+        // 4. Merkle sakne — pārlūkā
+        const merkleRoot = calculateMerkleRoot(currentFiles);
+        
+        // 5. Metadata priekš servera — BEZ failu satura
+        const fileMetadata = currentFiles.map(file => ({
+            path: file.path,
+            hash: file.hash
+        }));
+        
+        // 6. IEMAKSA PAR ZIP
         const fileCostWei = ethers.parseEther(currentFileCostEth);
         
         if (fileCostWei > 0n && !hasDepositedFiles) {
@@ -475,7 +456,7 @@ async function executeBackup() {
             hasDepositedFiles = true;
         }
         
-        // 5. AUGŠUPIELĀDE — TIKAI šifrētais ZIP
+        // 7. AUGŠUPIELĀDE — TIKAI šifrētais ZIP + metadata
         setStatus(t('uploading'));
         
         const executeResponse = await fetch('/api/execute-backup', {
@@ -483,14 +464,15 @@ async function executeBackup() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 repoName: `${githubUser}/${repoName}`,
-                files,
-                unchangedFiles: currentUnchangedFiles,
                 tokenId: tokenId.toString(),
                 walletAddress: userAddress,
                 fileCostEth: currentFileCostEth,
                 newUserCredits: currentNewUserCredits,
                 encryptedZip: Array.from(encryptedZipData),
                 iv: Array.from(iv),
+                fileMetadata,
+                unchangedFiles: currentUnchangedFiles,
+                merkleRoot,
                 previousHistory: currentPreviousHistory,
                 previousManifestId: currentPreviousManifestId,
                 previousBackupNumber: currentPreviousBackupNumber,
@@ -507,7 +489,7 @@ async function executeBackup() {
             return;
         }
         
-        // 6. PARAKSTS
+        // 8. PARAKSTS
         setStatus(t('signing'));
         
         const provider = new ethers.BrowserProvider(window.ethereum);
@@ -517,9 +499,8 @@ async function executeBackup() {
         const currentNonce = await readContract.getNonce(tokenId);
         const onChainBackupCount = await readContract.getBackupCount(tokenId);
         
-        const manifestURI = `ar://${executeResult.manifestTxId || ''}`;
+        const manifestURI = `ar://${executeResult.manifestTxId}`;
         const manifestHash = ethers.keccak256(ethers.toUtf8Bytes(manifestURI));
-        const merkleRoot = calculateMerkleRoot(files);
         
         const domain = {
             name: 'PermRepo',
@@ -550,13 +531,14 @@ async function executeBackup() {
         
         const signature = await signer.signTypedData(domain, types, value);
         
+        // 9. FINALIZE — TIKAI metadata, bez failu satura
         const finalizeResponse = await fetch('/api/finalize-backup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 tokenId: tokenId.toString(),
                 manifestTxId: executeResult.manifestTxId,
-                files,
+                fileMetadata,
                 deadline,
                 signature
             })
@@ -565,15 +547,15 @@ async function executeBackup() {
         const finalizeResult = await finalizeResponse.json();
         
         if (finalizeResult.success) {
-            const totalCostEth = (parseFloat(currentFileCostEth)).toFixed(18);
+            // NOTĪRA MK NO ATMIŅAS
+            masterKey = null;
             
             button.style.display = 'none';
             
             document.getElementById('status').innerHTML = 
                 `${t('backup-complete')}<br><br>` +
                 `${t('manifest-link')}: <a href="${CONFIG.arweaveGateway}/raw/${executeResult.manifestTxId}" target="_blank">ar://${executeResult.manifestTxId}</a><br>` +
-                `${t('file-cost')}: ${currentFileCostEth} ETH<br>` +
-                `${t('total-cost')}: ${totalCostEth} ETH`;
+                `${t('file-cost')}: ${currentFileCostEth} ETH`;
         } else {
             showError(finalizeResult.error || 'Kļūda');
             button.disabled = false;
@@ -581,6 +563,8 @@ async function executeBackup() {
         }
         
     } catch (e) {
+        masterKey = null;
+        
         if (e.code === 'ACTION_REJECTED') {
             showError(t('transaction-cancelled'));
         } else {
@@ -598,11 +582,15 @@ async function getBackupCountFromChain() {
     return Number(count);
 }
 
+// ==================================================
+// ŠIFRĒŠANA — vienkāršota, ar ethers.getBytes
+// ==================================================
+
 async function encryptData(data, keyHex) {
-    const key = keyHex.slice(2);
-    const keyBytes = new Uint8Array(32);
-    for (let i = 0; i < 32; i++) {
-        keyBytes[i] = parseInt(key.substring(i * 2, i * 2 + 2), 16);
+    const keyBytes = ethers.getBytes(keyHex);
+    
+    if (keyBytes.length !== 32) {
+        throw new Error('Invalid Master Key');
     }
     
     const cryptoKey = await crypto.subtle.importKey(
