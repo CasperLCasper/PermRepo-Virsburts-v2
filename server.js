@@ -8,7 +8,6 @@ import crypto from 'crypto';
 import session from 'express-session';
 import { Readable } from 'stream';
 import { TurboFactory, EthereumSigner } from '@ardrive/turbo-sdk';
-import JSZip from 'jszip';
 
 import { checkAllServices } from './healthChecks.js';
 import { submitBackupWithMerkle } from './merkle.js';
@@ -189,7 +188,7 @@ async function getTurboPaymentAddress() {
 }
 
 // ==================================================
-// GITHUB OAUTH (saīsināts)
+// GITHUB OAUTH
 // ==================================================
 
 app.get('/api/github/login', (req, res) => {
@@ -347,7 +346,7 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 }
 
 // ==================================================
-// PREPARE BACKUP
+// PREPARE BACKUP — iegūst failus un aprēķina izmaksas
 // ==================================================
 
 app.post('/api/prepare-backup', async (req, res) => {
@@ -379,7 +378,9 @@ app.post('/api/prepare-backup', async (req, res) => {
         if (tokenId === 0n) return res.status(400).json({ success: false, error: 'Nav NFT šim repo' });
         
         const nftOwner = await nftContract.ownerOf(tokenId);
-        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
+        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) {
+            return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
+        }
         
         const backupCount = Number(await nftContract.getBackupCount(tokenId));
         
@@ -474,7 +475,7 @@ app.post('/api/prepare-backup', async (req, res) => {
 });
 
 // ==================================================
-// EXECUTE BACKUP — tikai ZIP augšupielāde
+// EXECUTE BACKUP — TIKAI šifrēts ZIP, bez fallback
 // ==================================================
 
 app.post('/api/execute-backup', async (req, res) => {
@@ -493,25 +494,24 @@ app.post('/api/execute-backup', async (req, res) => {
         if (!tokenId) return res.status(400).json({ success: false, error: 'Nav tokenId' });
         if (fileCostEth === undefined) return res.status(400).json({ success: false, error: 'Nav fileCostEth' });
         
+        // ŠIFRĒTS ZIP IR OBLIGĀTS — bez fallback!
+        if (!encryptedZip || !Array.isArray(encryptedZip) || encryptedZip.length === 0) {
+            return res.status(400).json({ success: false, error: 'Šifrēts ZIP ir obligāts' });
+        }
+        
         const provider = getProvider();
         const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
         
         const nftOwner = await nftContract.ownerOf(tokenId);
-        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
+        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) {
+            return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
+        }
         
         const turbo = getTurbo();
         
-        let zipBuffer;
-        if (encryptedZip && Array.isArray(encryptedZip)) {
-            zipBuffer = Buffer.from(encryptedZip);
-        } else {
-            const zip = new JSZip();
-            for (const file of files) {
-                const fileBuffer = Buffer.from(file.content, 'base64');
-                zip.file(file.path, fileBuffer);
-            }
-            zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-        }
+        // ZIP dati — TIKAI šifrētais
+        const zipBuffer = Buffer.from(encryptedZip);
+        logInfo('Šifrētā ZIP izmērs', zipBuffer.length + ' bytes');
         
         // 1. ZIP APMAKSA
         const fileCostWei = ethers.parseEther(fileCostEth);
@@ -534,7 +534,7 @@ app.post('/api/execute-backup', async (req, res) => {
             await new Promise(resolve => setTimeout(resolve, 5000));
         }
         
-        // 2. ZIP AUGŠUPIELĀDE
+        // 2. ZIP AUGŠUPIELĀDE — TIKAI šifrētais ZIP
         const zipResult = await turbo.uploadFile({
             fileStreamFactory: () => Readable.from(zipBuffer),
             fileSizeFactory: () => zipBuffer.length,
@@ -544,7 +544,7 @@ app.post('/api/execute-backup', async (req, res) => {
                     { name: 'Repo', value: repoName },
                     { name: 'Type', value: 'backup-archive' },
                     { name: 'Content-Type', value: 'application/zip' },
-                    { name: 'Encrypted', value: encryptedZip ? 'true' : 'false' },
+                    { name: 'Encrypted', value: 'true' },
                     { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
                 ]
             }
@@ -555,7 +555,7 @@ app.post('/api/execute-backup', async (req, res) => {
         // 3. KREDĪTI
         await setUserCredits(walletAddress, BigInt(newUserCredits || '0'));
         
-        // 4. Aprēķina manifesta izmaksas (aptuveni)
+        // 4. Manifesta izmaksas
         const manifestSize = 2048;
         const manifestCostEth = await getEthForBytes(turbo, manifestSize);
         
@@ -575,7 +575,7 @@ app.post('/api/execute-backup', async (req, res) => {
 });
 
 // ==================================================
-// FINALIZE MANIFEST — manifesta augšupielāde
+// FINALIZE MANIFEST
 // ==================================================
 
 app.post('/api/finalize-manifest', async (req, res) => {
@@ -591,7 +591,9 @@ app.post('/api/finalize-manifest', async (req, res) => {
         const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
         
         const nftOwner = await nftContract.ownerOf(tokenId);
-        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
+        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) {
+            return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
+        }
         
         const turbo = getTurbo();
         
