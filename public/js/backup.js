@@ -10,7 +10,6 @@ let tokenId = null;
 let githubUser = null;
 let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
 let currentFileCostEth = '0';
-let currentManifestCostEth = '0';
 let currentNewUserCredits = '0';
 let masterKey = null;
 let currentUnchangedFiles = {};
@@ -180,6 +179,20 @@ function applyTranslations() {
     });
 }
 
+// ==================================================
+// IZMĒRA FORMĀTS — B, KB, MB
+// ==================================================
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) {
+        return bytes + ' B';
+    } else if (bytes < 1024 * 1024) {
+        return (bytes / 1024).toFixed(2) + ' KB';
+    } else {
+        return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+    }
+}
+
 async function init() {
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
@@ -282,10 +295,6 @@ async function loadNFTInfo() {
     }
 }
 
-// ==================================================
-// MASTER KEY — VIENKĀRŠA ĢENERĒŠANA
-// ==================================================
-
 async function generateMasterKey() {
     const keyBytes = crypto.getRandomValues(new Uint8Array(32));
     return ethers.hexlify(keyBytes);
@@ -339,7 +348,7 @@ function showMasterKey(masterKey) {
 }
 
 // ==================================================
-// PREPARE BACKUP
+// PREPARE BACKUP — parāda precīzu izmēru
 // ==================================================
 
 async function prepareBackup() {
@@ -381,12 +390,14 @@ async function prepareBackup() {
             return;
         }
         
+        // PAREIZS IZMĒRA FORMĀTS
         const totalBytes = result.totalBytes || 0;
+        const sizeText = formatFileSize(totalBytes);
         
         document.getElementById('status').innerHTML = 
             `${t('files-count')}: ${currentFiles.length}<br>` +
-            `${t('files-size')}: ${(totalBytes / 1024 / 1024).toFixed(2)} MB<br>` +
-            `${t('file-cost')}: ${currentFileCostEth} ETH`;
+            `${t('files-size')}: ${sizeText}<br>` +
+            `${t('file-cost')}: ${currentFileCostEth} Base ETH`;
         
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
@@ -460,7 +471,7 @@ async function executeZipUpload() {
         const fileCostWei = ethers.parseEther(currentFileCostEth);
         
         if (fileCostWei > 0n && !hasDepositedFiles) {
-            setStatus(`${t('deposit-files')}: ${currentFileCostEth} ETH...`);
+            setStatus(`${t('deposit-files')}: ${currentFileCostEth} Base ETH...`);
             button.textContent = '⏳';
             
             const tx = await signer.sendTransaction({
@@ -489,7 +500,8 @@ async function executeZipUpload() {
                 newUserCredits: currentNewUserCredits,
                 encryptedZip: Array.from(encryptedZipData),
                 iv: Array.from(currentIV),
-                fileMetadata: currentFileMetadata
+                fileMetadata: currentFileMetadata,
+                fileWinc: result.fileWinc || '0'
             })
         });
         
@@ -502,10 +514,9 @@ async function executeZipUpload() {
             return;
         }
         
-        // 7. ATGRIEŽ ZIP TX ID — tagad jāiemaksā par manifestu
         document.getElementById('status').innerHTML = 
             `✅ ZIP augšupielādēts!<br><br>` +
-            `${t('manifest-cost')}: ${currentFileCostEth} ETH`;
+            `${t('manifest-cost')}: ${currentFileCostEth} Base ETH`;
         
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
@@ -531,11 +542,10 @@ async function finalizeManifest(zipTxId, button) {
     button.disabled = true;
     
     try {
-        // 1. IEMAKSA PAR MANIFESTU
         const manifestCostWei = ethers.parseEther(currentFileCostEth);
         
         if (manifestCostWei > 0n && !hasDepositedManifest) {
-            setStatus(`${t('deposit-manifest')}: ${currentFileCostEth} ETH...`);
+            setStatus(`${t('deposit-manifest')}: ${currentFileCostEth} Base ETH...`);
             button.textContent = '⏳';
             
             const tx = await signer.sendTransaction({
@@ -550,7 +560,6 @@ async function finalizeManifest(zipTxId, button) {
             hasDepositedManifest = true;
         }
         
-        // 2. MANIFESTA AUGŠUPIELĀDE
         setStatus(t('uploading'));
         
         const manifestResponse = await fetch('/api/finalize-manifest', {
@@ -568,7 +577,8 @@ async function finalizeManifest(zipTxId, button) {
                 previousManifestId: currentPreviousManifestId,
                 previousBackupNumber: currentPreviousBackupNumber,
                 previousEncryptionIVs: currentPreviousEncryptionIVs,
-                iv: Array.from(currentIV)
+                iv: Array.from(currentIV),
+                manifestWinc: result.fileWinc || '0'
             })
         });
         
@@ -581,7 +591,6 @@ async function finalizeManifest(zipTxId, button) {
             return;
         }
         
-        // 3. PARAKSTS
         setStatus(t('signing'));
         
         const provider = new ethers.BrowserProvider(window.ethereum);
@@ -643,13 +652,16 @@ async function finalizeManifest(zipTxId, button) {
             button.style.display = 'none';
             
             const totalCostEth = (parseFloat(currentFileCostEth) * 2).toFixed(18);
+            const sizeText = formatFileSize(currentFiles.reduce((sum, f) => sum + (f.size || 0), 0));
             
             document.getElementById('status').innerHTML = 
                 `${t('backup-complete')}<br><br>` +
                 `${t('manifest-link')}: <a href="${CONFIG.arweaveGateway}/raw/${manifestResult.manifestTxId}" target="_blank">ar://${manifestResult.manifestTxId}</a><br>` +
-                `${t('file-cost')}: ${currentFileCostEth} ETH<br>` +
-                `${t('manifest-cost')}: ${currentFileCostEth} ETH<br>` +
-                `${t('total-cost')}: ${totalCostEth} ETH`;
+                `${t('files-count')}: ${currentFiles.length}<br>` +
+                `${t('files-size')}: ${sizeText}<br>` +
+                `${t('file-cost')}: ${currentFileCostEth} Base ETH<br>` +
+                `${t('manifest-cost')}: ${currentFileCostEth} Base ETH<br>` +
+                `${t('total-cost')}: ${totalCostEth} Base ETH`;
         } else {
             showError(finalizeResult.error || 'Kļūda');
             button.disabled = false;
@@ -674,10 +686,6 @@ async function getBackupCountFromChain() {
     const count = await nftContract.getBackupCount(tokenId);
     return Number(count);
 }
-
-// ==================================================
-// ŠIFRĒŠANA — vienkāršota, ar ethers.getBytes
-// ==================================================
 
 async function encryptData(data, keyHex) {
     const keyBytes = ethers.getBytes(keyHex);
