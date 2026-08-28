@@ -346,7 +346,7 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 }
 
 // ==================================================
-// PREPARE BACKUP — iegūst failus un aprēķina izmaksas
+// PREPARE BACKUP
 // ==================================================
 
 app.post('/api/prepare-backup', async (req, res) => {
@@ -475,26 +475,30 @@ app.post('/api/prepare-backup', async (req, res) => {
 });
 
 // ==================================================
-// EXECUTE BACKUP — TIKAI šifrēts ZIP, bez fallback
+// EXECUTE BACKUP — TIKAI šifrēts ZIP + metadata
 // ==================================================
 
 app.post('/api/execute-backup', async (req, res) => {
     try {
-        const { repoName, files, tokenId, fileCostEth, walletAddress, newUserCredits, encryptedZip, iv } = req.body;
+        const { 
+            repoName, tokenId, fileCostEth, walletAddress, newUserCredits, 
+            encryptedZip, iv, fileMetadata, unchangedFiles, merkleRoot,
+            previousHistory, previousManifestId, previousBackupNumber, previousEncryptionIVs
+        } = req.body;
         
         logSection('📤 EXECUTE BACKUP — ZIP');
         logInfo('Repo', repoName);
         logInfo('Token ID', tokenId);
         logInfo('Failu izmaksas', fileCostEth + ' ETH');
         logInfo('Šifrēts ZIP', encryptedZip ? '✅ JĀ' : '❌ NĒ');
+        logInfo('Metadata faili', fileMetadata ? fileMetadata.length : 0);
         
         if (!repoName) return res.status(400).json({ success: false, error: 'Nav repoName' });
         if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav walletAddress' });
-        if (!Array.isArray(files)) return res.status(400).json({ success: false, error: 'files nav masīvs' });
         if (!tokenId) return res.status(400).json({ success: false, error: 'Nav tokenId' });
         if (fileCostEth === undefined) return res.status(400).json({ success: false, error: 'Nav fileCostEth' });
         
-        // ŠIFRĒTS ZIP IR OBLIGĀTS — bez fallback!
+        // ŠIFRĒTS ZIP IR OBLIGĀTS
         if (!encryptedZip || !Array.isArray(encryptedZip) || encryptedZip.length === 0) {
             return res.status(400).json({ success: false, error: 'Šifrēts ZIP ir obligāts' });
         }
@@ -509,7 +513,6 @@ app.post('/api/execute-backup', async (req, res) => {
         
         const turbo = getTurbo();
         
-        // ZIP dati — TIKAI šifrētais
         const zipBuffer = Buffer.from(encryptedZip);
         logInfo('Šifrētā ZIP izmērs', zipBuffer.length + ' bytes');
         
@@ -534,7 +537,7 @@ app.post('/api/execute-backup', async (req, res) => {
             await new Promise(resolve => setTimeout(resolve, 5000));
         }
         
-        // 2. ZIP AUGŠUPIELĀDE — TIKAI šifrētais ZIP
+        // 2. ZIP AUGŠUPIELĀDE
         const zipResult = await turbo.uploadFile({
             fileStreamFactory: () => Readable.from(zipBuffer),
             fileSizeFactory: () => zipBuffer.length,
@@ -559,66 +562,7 @@ app.post('/api/execute-backup', async (req, res) => {
         const manifestSize = 2048;
         const manifestCostEth = await getEthForBytes(turbo, manifestSize);
         
-        res.json({
-            success: true,
-            zipTxId: zipResult.id,
-            manifestSize,
-            manifestCostEth,
-            iv: iv || null
-        });
-    } catch (error) {
-        logSection('❌ EXECUTE BACKUP ERROR');
-        logError(errorMessage(error));
-        console.error(error);
-        return res.status(500).json({ success: false, error: errorMessage(error) });
-    }
-});
-
-// ==================================================
-// FINALIZE MANIFEST
-// ==================================================
-
-app.post('/api/finalize-manifest', async (req, res) => {
-    try {
-        const { repoName, tokenId, walletAddress, manifestCostEth, zipTxId, files, unchangedFiles, previousHistory, previousManifestId, previousBackupNumber, previousEncryptionIVs, iv } = req.body;
-        
-        logSection('📤 FINALIZE MANIFEST');
-        logInfo('Repo', repoName);
-        logInfo('Token ID', tokenId);
-        logInfo('Manifesta izmaksas', manifestCostEth + ' ETH');
-        
-        const provider = getProvider();
-        const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
-        
-        const nftOwner = await nftContract.ownerOf(tokenId);
-        if (nftOwner.toLowerCase() !== walletAddress.toLowerCase()) {
-            return res.status(403).json({ success: false, error: 'NFT nepieder šim makam' });
-        }
-        
-        const turbo = getTurbo();
-        
-        // 1. MANIFESTA APMAKSA
-        const manifestCostWei = ethers.parseEther(manifestCostEth);
-        
-        logSection('💳 MANIFESTA APMAKSA');
-        if (manifestCostWei > 0n) {
-            const turboAddress = await getTurboPaymentAddress();
-            const operatorWallet = getOperatorWallet(provider);
-            const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
-            
-            const treasuryRead = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, provider);
-            const isOp = await treasuryRead.isOperator(operatorWallet.address);
-            if (!isOp) return res.status(500).json({ success: false, error: 'Operators nav atļauts' });
-            
-            const paymentId = ethers.id(repoName + '-manifest-' + Date.now().toString());
-            const payTx = await treasuryWrite.payTurbo(manifestCostWei, paymentId, turboAddress);
-            await payTx.wait();
-            
-            logSuccess('Manifesta transakcija: ' + payTx.hash);
-            await new Promise(resolve => setTimeout(resolve, 5000));
-        }
-        
-        // 2. MANIFESTA IZVEIDE
+        // 5. MANIFESTA IZVEIDE
         const backupCount = Number(await nftContract.getBackupCount(tokenId));
         const newBackupNumber = backupCount + 1;
         
@@ -634,7 +578,7 @@ app.post('/api/finalize-manifest', async (req, res) => {
         
         const encryptionIVs = { ...(previousEncryptionIVs || {}) };
         if (iv && Array.isArray(iv)) {
-            encryptionIVs[zipTxId] = iv;
+            encryptionIVs[zipResult.id] = iv;
         }
         
         const manifest = {
@@ -648,20 +592,29 @@ app.post('/api/finalize-manifest', async (req, res) => {
             version: '0.2.0',
             encryption: { ivs: encryptionIVs },
             archive: {
-                id: zipTxId,
-                url: `${ARWEAVE_GATEWAY}/raw/${zipTxId}`,
-                contains: files.map(file => ({ path: file.path, hash: file.hash }))
+                id: zipResult.id,
+                url: `${ARWEAVE_GATEWAY}/raw/${zipResult.id}`,
+                contains: fileMetadata || []
             },
             paths: {},
             history
         };
         
-        for (const file of files) {
-            manifest.paths[file.path] = { zipId: zipTxId, hash: file.hash };
+        // Mainītie faili — jaunais ZIP
+        for (const fileMeta of (fileMetadata || [])) {
+            manifest.paths[fileMeta.path] = {
+                zipId: zipResult.id,
+                hash: fileMeta.hash
+            };
         }
+        
+        // Nemainītie faili — vecais ZIP
         for (const [filePath, info] of Object.entries(unchangedFiles || {})) {
             if (info && info.zipId) {
-                manifest.paths[filePath] = { zipId: info.zipId, hash: info.hash };
+                manifest.paths[filePath] = {
+                    zipId: info.zipId,
+                    hash: info.hash
+                };
             }
         }
         
@@ -672,7 +625,24 @@ app.post('/api/finalize-manifest', async (req, res) => {
         
         const manifestBuffer = Buffer.from(JSON.stringify(manifest), 'utf8');
         
-        // 3. MANIFESTA AUGŠUPIELĀDE
+        // 6. MANIFESTA APMAKSA
+        const manifestCostWei = ethers.parseEther(manifestCostEth);
+        
+        logSection('💳 MANIFESTA APMAKSA');
+        if (manifestCostWei > 0n) {
+            const turboAddress = await getTurboPaymentAddress();
+            const operatorWallet = getOperatorWallet(provider);
+            const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
+            
+            const paymentId = ethers.id(repoName + '-manifest-' + Date.now().toString());
+            const payTx = await treasuryWrite.payTurbo(manifestCostWei, paymentId, turboAddress);
+            await payTx.wait();
+            
+            logSuccess('Manifesta transakcija: ' + payTx.hash);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+        
+        // 7. MANIFESTA AUGŠUPIELĀDE
         const manifestResult = await turbo.uploadFile({
             fileStreamFactory: () => Readable.from(manifestBuffer),
             fileSizeFactory: () => manifestBuffer.length,
@@ -691,12 +661,14 @@ app.post('/api/finalize-manifest', async (req, res) => {
         
         res.json({
             success: true,
+            zipTxId: zipResult.id,
             manifestTxId: manifestResult.id,
             manifest,
-            backupNumber: newBackupNumber
+            manifestCostEth,
+            merkleRoot: merkleRoot || null
         });
     } catch (error) {
-        logSection('❌ FINALIZE MANIFEST ERROR');
+        logSection('❌ EXECUTE BACKUP ERROR');
         logError(errorMessage(error));
         console.error(error);
         return res.status(500).json({ success: false, error: errorMessage(error) });
@@ -704,12 +676,12 @@ app.post('/api/finalize-manifest', async (req, res) => {
 });
 
 // ==================================================
-// FINALIZE BACKUP — paraksts un Merkle sakne
+// FINALIZE BACKUP — TIKAI metadata
 // ==================================================
 
 app.post('/api/finalize-backup', async (req, res) => {
     try {
-        const { tokenId, manifestTxId, files, deadline, signature } = req.body;
+        const { tokenId, manifestTxId, fileMetadata, deadline, signature } = req.body;
         
         if (!tokenId) return res.status(400).json({ success: false, error: 'Nav tokenId' });
         if (!manifestTxId) return res.status(400).json({ success: false, error: 'Nav manifestTxId' });
@@ -721,7 +693,7 @@ app.post('/api/finalize-backup', async (req, res) => {
         const merkleTxHash = await submitBackupWithMerkle({
             tokenId,
             manifestTxId,
-            files: files || [],
+            files: fileMetadata || [],
             deadline,
             signature,
             nftContract: new ethers.Contract(NFT_ADDRESS, NFT_ABI, getOperatorWallet(provider)),
