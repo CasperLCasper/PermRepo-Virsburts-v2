@@ -163,6 +163,22 @@ async function getEthForBytes(turbo, totalBytes) {
     return String(tokenPrice);
 }
 
+// Pārvērš winc uz ETH
+async function getEthForWinc(turbo, wincAmount) {
+    if (wincAmount <= 0n) return '0';
+    
+    // Izmanto 1 bytes cenu kā bāzi un reizina ar winc attiecību
+    const { tokenPrice } = await turbo.getTokenPriceForBytes({ byteCount: 1 });
+    const oneByteCost = ethers.parseEther(String(tokenPrice));
+    
+    // Aprēķina aptuveno byte skaitu no winc
+    // Vienkāršots aprēķins — var pielāgot pēc vajadzības
+    const estimatedBytes = Math.ceil(Number(wincAmount));
+    const totalCost = ethers.parseEther(String(tokenPrice)) * BigInt(estimatedBytes);
+    
+    return ethers.formatEther(totalCost);
+}
+
 async function getTurboPaymentAddress() {
     try {
         const response = await fetch(`${TURBO_PAYMENT_URL}/v1/info`);
@@ -346,7 +362,7 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 }
 
 // ==================================================
-// PREPARE BACKUP
+// PREPARE BACKUP — ar Redis kredītu pārbaudi un starpības aprēķinu
 // ==================================================
 
 app.post('/api/prepare-backup', async (req, res) => {
@@ -442,11 +458,34 @@ app.post('/api/prepare-backup', async (req, res) => {
         
         const turbo = getTurbo();
         const { totalWinc: fileWinc } = await getWincForBytes(turbo, [estimatedZipSize]);
-        const fileCostEth = await getEthForBytes(turbo, estimatedZipSize);
         
+        // Redis kredītu pārbaude un starpības aprēķins
         const userCredits = await getUserCredits(walletAddress);
-        let newUserCredits = 0n;
-        if (userCredits >= fileWinc) newUserCredits = userCredits - fileWinc;
+        const fileWincBig = fileWinc;
+        
+        logSection('💰 GRĀMATVEDĪBA');
+        logInfo('Lietotāja kredīti (Redis)', userCredits.toString() + ' winc');
+        logInfo('Nepieciešamie winc', fileWincBig.toString() + ' winc');
+        
+        let newUserCredits;
+        let fileCostEthForUser;
+        
+        if (userCredits >= fileWincBig) {
+            // Pietiek kredītu — nav jāiemaksā
+            newUserCredits = userCredits - fileWincBig;
+            fileCostEthForUser = '0';
+            logSuccess('Pietiek kredītu! Nav jāiemaksā');
+            logInfo('Atlikums pēc', newUserCredits.toString() + ' winc');
+        } else {
+            // Nepietiek kredītu — jāiemaksā tikai starpība
+            const deficitWinc = fileWincBig - userCredits;
+            logInfo('Trūkst', deficitWinc.toString() + ' winc');
+            
+            // Pārvērš deficitWinc uz ETH
+            fileCostEthForUser = await getEthForWinc(turbo, deficitWinc);
+            newUserCredits = 0n;
+            logInfo('Jāiemaksā', fileCostEthForUser + ' ETH');
+        }
         
         res.json({
             success: true,
@@ -462,7 +501,8 @@ app.post('/api/prepare-backup', async (req, res) => {
             totalBytes: totalFileBytes,
             estimatedZipSize,
             fileWinc: fileWinc.toString(),
-            fileCostEth,
+            fileCostEth: fileCostEthForUser,
+            userCredits: userCredits.toString(),
             newUserCredits: newUserCredits.toString(),
             backupCount
         });
@@ -482,20 +522,20 @@ app.post('/api/execute-backup', async (req, res) => {
     try {
         const { 
             repoName, tokenId, fileCostEth, walletAddress, newUserCredits, 
-            encryptedZip, iv, fileMetadata
+            encryptedZip, iv, fileMetadata, fileWinc
         } = req.body;
         
         logSection('📤 EXECUTE BACKUP — 1. POSMS: ZIP');
         logInfo('Repo', repoName);
         logInfo('Token ID', tokenId);
         logInfo('Failu izmaksas', fileCostEth + ' ETH');
+        logInfo('Winc', fileWinc ? fileWinc.toString() : '0');
         logInfo('Šifrēts ZIP', encryptedZip ? '✅ JĀ' : '❌ NĒ');
         logInfo('Metadata faili', fileMetadata ? fileMetadata.length : 0);
         
         if (!repoName) return res.status(400).json({ success: false, error: 'Nav repoName' });
         if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav walletAddress' });
         if (!tokenId) return res.status(400).json({ success: false, error: 'Nav tokenId' });
-        if (fileCostEth === undefined) return res.status(400).json({ success: false, error: 'Nav fileCostEth' });
         
         if (!encryptedZip || !Array.isArray(encryptedZip) || encryptedZip.length === 0) {
             return res.status(400).json({ success: false, error: 'Šifrēts ZIP ir obligāts' });
@@ -514,8 +554,27 @@ app.post('/api/execute-backup', async (req, res) => {
         const zipBuffer = Buffer.from(encryptedZip);
         logInfo('Šifrētā ZIP izmērs', zipBuffer.length + ' bytes');
         
-        // 1. ZIP APMAKSA
-        const fileCostWei = ethers.parseEther(fileCostEth);
+        // Pārbauda kredītus
+        const userCredits = await getUserCredits(walletAddress);
+        const fileWincBig = BigInt(fileWinc || '0');
+        
+        let useCredits = false;
+        let creditsToUse = 0n;
+        
+        if (userCredits > 0n && fileWincBig > 0n) {
+            if (userCredits >= fileWincBig) {
+                creditsToUse = fileWincBig;
+                useCredits = true;
+            } else {
+                creditsToUse = userCredits;
+                useCredits = true;
+            }
+            
+            logInfo('Izmanto Redis kredītus', creditsToUse.toString() + ' winc');
+        }
+        
+        // 1. ZIP APMAKSA — iemaksā tikai starpību
+        const fileCostWei = ethers.parseEther(fileCostEth || '0');
         
         logSection('💳 ZIP APMAKSA');
         if (fileCostWei > 0n) {
@@ -533,36 +592,65 @@ app.post('/api/execute-backup', async (req, res) => {
             
             logSuccess('ZIP transakcija: ' + payTx.hash);
             await new Promise(resolve => setTimeout(resolve, 5000));
+        } else if (useCredits) {
+            logSuccess('Izmanto Redis kredītus — nav iemaksas');
+        } else {
+            logSuccess('Bezmaksas augšupielāde');
         }
         
         // 2. ZIP AUGŠUPIELĀDE
-        const zipResult = await turbo.uploadFile({
-            fileStreamFactory: () => Readable.from(zipBuffer),
-            fileSizeFactory: () => zipBuffer.length,
-            dataItemOpts: {
-                tags: [
-                    { name: 'App-Name', value: 'PermRepo' },
-                    { name: 'Repo', value: repoName },
-                    { name: 'Type', value: 'backup-archive' },
-                    { name: 'Content-Type', value: 'application/zip' },
-                    { name: 'Encrypted', value: 'true' },
-                    { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
-                ]
+        try {
+            const zipResult = await turbo.uploadFile({
+                fileStreamFactory: () => Readable.from(zipBuffer),
+                fileSizeFactory: () => zipBuffer.length,
+                dataItemOpts: {
+                    tags: [
+                        { name: 'App-Name', value: 'PermRepo' },
+                        { name: 'Repo', value: repoName },
+                        { name: 'Type', value: 'backup-archive' },
+                        { name: 'Content-Type', value: 'application/zip' },
+                        { name: 'Encrypted', value: 'true' },
+                        { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
+                    ]
+                }
+            });
+            
+            logSuccess(`ZIP TX ID: ${zipResult.id}`);
+            
+            // Veiksmīga augšupielāde — atjaunina Redis kredītus
+            if (useCredits) {
+                const remainingCredits = userCredits - creditsToUse;
+                await setUserCredits(walletAddress, remainingCredits);
+                logInfo('Kredīti atjaunināti', 'Atlikums: ' + remainingCredits.toString() + ' winc');
             }
-        });
+            
+            res.json({
+                success: true,
+                step: 'zip_uploaded',
+                zipTxId: zipResult.id,
+                iv: iv || null
+            });
+            
+        } catch (uploadError) {
+            // AUGŠUPIELĀDE NEIZDEVĀS — kredīti paliek
+            logSection('⚠️ AUGŠUPIELĀDE NEIZDEVĀS');
+            logError(errorMessage(uploadError));
+            
+            if (useCredits) {
+                // Kredīti bija no Redis — tie paliek
+                await setUserCredits(walletAddress, userCredits);
+                logInfo('Redis kredīti atjaunoti', userCredits.toString() + ' winc');
+            } else if (fileCostWei > 0n) {
+                // Iemaksa tika veikta, bet augšupielāde neizdevās — kredīti uzkrājas
+                const newRedisCredits = userCredits + fileWincBig;
+                await setUserCredits(walletAddress, newRedisCredits);
+                logInfo('Kredīti reģistrēti Redis', newRedisCredits.toString() + ' winc');
+                logWarning('Šos kredītus lietotājs var izmantot nākamajā backupā');
+            }
+            
+            return res.status(500).json({ success: false, error: 'Augšupielāde neizdevās: ' + errorMessage(uploadError) });
+        }
         
-        logSuccess(`ZIP TX ID: ${zipResult.id}`);
-        
-        // 3. KREDĪTI
-        await setUserCredits(walletAddress, BigInt(newUserCredits || '0'));
-        
-        // 4. ATGRIEŽ ZIP TX ID — manifesta apmaksa būs atsevišķs posms
-        res.json({
-            success: true,
-            step: 'zip_uploaded',
-            zipTxId: zipResult.id,
-            iv: iv || null
-        });
     } catch (error) {
         logSection('❌ EXECUTE BACKUP ERROR');
         logError(errorMessage(error));
@@ -572,7 +660,7 @@ app.post('/api/execute-backup', async (req, res) => {
 });
 
 // ==================================================
-// FINALIZE MANIFEST — 2. POSMS: Manifesta apmaksa + augšupielāde
+// FINALIZE MANIFEST — 2. POSMS
 // ==================================================
 
 app.post('/api/finalize-manifest', async (req, res) => {
@@ -580,7 +668,7 @@ app.post('/api/finalize-manifest', async (req, res) => {
         const { 
             repoName, tokenId, walletAddress, manifestCostEth, zipTxId, 
             fileMetadata, unchangedFiles, previousHistory, previousManifestId, 
-            previousBackupNumber, previousEncryptionIVs, iv
+            previousBackupNumber, previousEncryptionIVs, iv, manifestWinc
         } = req.body;
         
         logSection('📤 2. POSMS: MANIFESTS');
@@ -591,7 +679,6 @@ app.post('/api/finalize-manifest', async (req, res) => {
         if (!repoName) return res.status(400).json({ success: false, error: 'Nav repoName' });
         if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav walletAddress' });
         if (!tokenId) return res.status(400).json({ success: false, error: 'Nav tokenId' });
-        if (manifestCostEth === undefined) return res.status(400).json({ success: false, error: 'Nav manifestCostEth' });
         
         const provider = getProvider();
         const nftContract = new ethers.Contract(NFT_ADDRESS, NFT_ABI, provider);
@@ -603,8 +690,25 @@ app.post('/api/finalize-manifest', async (req, res) => {
         
         const turbo = getTurbo();
         
+        // Pārbauda kredītus manifestam
+        const userCredits = await getUserCredits(walletAddress);
+        const manifestWincBig = BigInt(manifestWinc || '0');
+        
+        let useCredits = false;
+        let creditsToUse = 0n;
+        
+        if (userCredits > 0n && manifestWincBig > 0n) {
+            if (userCredits >= manifestWincBig) {
+                creditsToUse = manifestWincBig;
+            } else {
+                creditsToUse = userCredits;
+            }
+            useCredits = true;
+            logInfo('Izmanto Redis kredītus', creditsToUse.toString() + ' winc');
+        }
+        
         // 1. MANIFESTA APMAKSA
-        const manifestCostWei = ethers.parseEther(manifestCostEth);
+        const manifestCostWei = ethers.parseEther(manifestCostEth || '0');
         
         logSection('💳 MANIFESTA APMAKSA');
         if (manifestCostWei > 0n) {
@@ -622,6 +726,8 @@ app.post('/api/finalize-manifest', async (req, res) => {
             
             logSuccess('Manifesta transakcija: ' + payTx.hash);
             await new Promise(resolve => setTimeout(resolve, 5000));
+        } else if (useCredits) {
+            logSuccess('Izmanto Redis kredītus manifestam');
         }
         
         // 2. MANIFESTA IZVEIDE
@@ -687,28 +793,53 @@ app.post('/api/finalize-manifest', async (req, res) => {
         logInfo('Manifesta izmērs', manifestBuffer.length + ' bytes');
         
         // 3. MANIFESTA AUGŠUPIELĀDE
-        const manifestResult = await turbo.uploadFile({
-            fileStreamFactory: () => Readable.from(manifestBuffer),
-            fileSizeFactory: () => manifestBuffer.length,
-            dataItemOpts: {
-                tags: [
-                    { name: 'App-Name', value: 'PermRepo' },
-                    { name: 'Type', value: 'path-manifest' },
-                    { name: 'Repo', value: repoName },
-                    { name: 'Content-Type', value: 'application/x.arweave-manifest+json' },
-                    { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
-                ]
+        try {
+            const manifestResult = await turbo.uploadFile({
+                fileStreamFactory: () => Readable.from(manifestBuffer),
+                fileSizeFactory: () => manifestBuffer.length,
+                dataItemOpts: {
+                    tags: [
+                        { name: 'App-Name', value: 'PermRepo' },
+                        { name: 'Type', value: 'path-manifest' },
+                        { name: 'Repo', value: repoName },
+                        { name: 'Content-Type', value: 'application/x.arweave-manifest+json' },
+                        { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
+                    ]
+                }
+            });
+            
+            logSuccess(`MANIFEST TX ID: ${manifestResult.id}`);
+            
+            // Veiksmīga manifesta augšupielāde — atjaunina Redis kredītus
+            if (useCredits) {
+                const remainingCredits = userCredits - creditsToUse;
+                await setUserCredits(walletAddress, remainingCredits);
+                logInfo('Kredīti atjaunināti', 'Atlikums: ' + remainingCredits.toString() + ' winc');
             }
-        });
+            
+            res.json({
+                success: true,
+                manifestTxId: manifestResult.id,
+                manifest,
+                backupNumber: newBackupNumber
+            });
+            
+        } catch (manifestUploadError) {
+            logSection('⚠️ MANIFESTA AUGŠUPIELĀDE NEIZDEVĀS');
+            logError(errorMessage(manifestUploadError));
+            
+            if (useCredits) {
+                await setUserCredits(walletAddress, userCredits);
+                logInfo('Redis kredīti atjaunoti', userCredits.toString() + ' winc');
+            } else if (manifestCostWei > 0n) {
+                const newRedisCredits = userCredits + manifestWincBig;
+                await setUserCredits(walletAddress, newRedisCredits);
+                logInfo('Kredīti reģistrēti Redis', newRedisCredits.toString() + ' winc');
+            }
+            
+            return res.status(500).json({ success: false, error: 'Manifesta augšupielāde neizdevās' });
+        }
         
-        logSuccess(`MANIFEST TX ID: ${manifestResult.id}`);
-        
-        res.json({
-            success: true,
-            manifestTxId: manifestResult.id,
-            manifest,
-            backupNumber: newBackupNumber
-        });
     } catch (error) {
         logSection('❌ FINALIZE MANIFEST ERROR');
         logError(errorMessage(error));
@@ -718,7 +849,7 @@ app.post('/api/finalize-manifest', async (req, res) => {
 });
 
 // ==================================================
-// FINALIZE BACKUP — paraksts un Merkle sakne
+// FINALIZE BACKUP
 // ==================================================
 
 app.post('/api/finalize-backup', async (req, res) => {
@@ -752,6 +883,31 @@ app.post('/api/finalize-backup', async (req, res) => {
     }
 });
 
+// ==================================================
+// KREDĪTU STATUS
+// ==================================================
+
+app.get('/api/credits/status', async (req, res) => {
+    try {
+        const { walletAddress } = req.query;
+        if (!walletAddress) return res.status(400).json({ success: false, error: 'Nav walletAddress' });
+        
+        const credits = await getUserCredits(walletAddress);
+        
+        logSection('💰 REDIS KREDĪTU PĀRBAUDE');
+        logInfo('Wallet', walletAddress);
+        logInfo('Kredīti', credits.toString() + ' winc');
+        
+        res.json({
+            success: true,
+            walletAddress,
+            credits: credits.toString()
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: errorMessage(error) });
+    }
+});
+
 app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
@@ -779,5 +935,6 @@ app.listen(PORT, () => {
     logInfo('NFT_ADDRESS', NFT_ADDRESS || '❌ NAV');
     logInfo('SUBSCRIPTION_ADDRESS', SUBSCRIPTION_ADDRESS || '❌ NAV');
     logInfo('USDC_ADDRESS', USDC_ADDRESS || '❌ NAV');
+    logInfo('Redis', getRedis() ? '✅ IR' : '❌ NAV');
     console.log('='.repeat(60) + '\n');
 });
