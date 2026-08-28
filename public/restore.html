@@ -61,15 +61,9 @@
 
         .info-row { 
             display: flex; 
-            justify-content: space-between; 
-            padding: 16px 0; 
-            border-bottom: 1px solid #30363d;
-            margin-bottom: 8px;
-        }
-        .info-row.text-left { 
-            text-align: left; 
             flex-direction: column; 
-            gap: 8px; 
+            gap: 8px;
+            padding: 16px 0; 
             border-bottom: 1px solid #30363d;
             margin-bottom: 8px;
         }
@@ -80,7 +74,6 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        .info-value { font-weight: 600; font-size: 16px; word-break: break-all; color: #ffffff; padding: 4px 0; }
 
         input, textarea { 
             width: 100%; 
@@ -160,32 +153,16 @@
         <p class="subtitle" data-i18n="restore-subtitle">Atjauno GitHub repo no Arweave — bez servera!</p>
         
         <div class="info-row">
-            <span class="info-label" data-i18n="wallet-label">Savienotais maks</span>
-            <span class="info-value" id="walletStatus" data-i18n="wallet-not-connected">Nav savienots</span>
+            <span class="info-label" data-i18n="manifest-label">Arweave manifests (TX ID vai ar://)</span>
         </div>
-        <button id="connectWalletBtn" onclick="connectWallet()" data-i18n="connect-wallet">🔌 Savienot maku</button>
+        <input type="text" id="manifestInput" data-i18n-placeholder="manifest-placeholder" placeholder="ar://ABC123... vai https://ar-io.dev/raw/ABC123...">
         
-        <div id="nftSection" style="display: none;">
-            <div class="info-row">
-                <span class="info-label" data-i18n="nft-label">NFT Token ID</span>
-                <span class="info-value" id="nftTokenId">-</span>
-            </div>
-            <div id="nftStatus" class="status"></div>
+        <div class="info-row">
+            <span class="info-label" data-i18n="master-key-label">Master atslēga</span>
         </div>
+        <textarea id="masterKeyInput" data-i18n-placeholder="master-key-placeholder" placeholder="Ievadi savu master atslēgu..."></textarea>
         
-        <div id="restoreSection" style="display: none;">
-            <div class="info-row">
-                <span class="info-label" data-i18n="manifest-label">Arweave manifests</span>
-            </div>
-            <input type="text" id="manifestInput" data-i18n-placeholder="manifest-placeholder" placeholder="ar://ABC123... vai https://ar-io.dev/raw/ABC123...">
-            
-            <div class="info-row">
-                <span class="info-label" data-i18n="master-key-label">Master atslēga</span>
-            </div>
-            <textarea id="masterKeyInput" data-i18n-placeholder="master-key-placeholder" placeholder="Ievadi savu master atslēgu..."></textarea>
-            
-            <button id="restoreBtn" onclick="restoreRepo()" data-i18n="restore-btn">📥 Atjaunot repozitoriju</button>
-        </div>
+        <button id="restoreBtn" onclick="restoreRepo()" data-i18n="restore-btn">📥 Atjaunot repozitoriju</button>
         
         <div class="progress" id="progress">
             <div class="progress-bar" id="progressBar" style="width: 0%"></div>
@@ -203,24 +180,13 @@
         
         const GATEWAYS = ['https://ar-io.dev', 'https://arweave.net'];
         
-        let userAddress = null;
-        let signer = null;
         let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
-        let CONFIG = {};
         
         const translations = {
             lv: {
                 'restore-title': '🔓 PermRepo Atjaunošana',
                 'restore-subtitle': 'Atjauno GitHub repo no Arweave — bez servera!',
-                'wallet-label': 'Savienotais maks',
-                'wallet-not-connected': 'Nav savienots',
-                'wallet-connected': 'Savienots',
-                'connect-wallet': '🔌 Savienot maku',
-                'nft-label': 'NFT Token ID',
-                'nft-found': '✅ NFT atrasts!',
-                'nft-not-found': '❌ NFT nav atrasts šim makam',
-                'nft-verifying': '⏳ Pārbauda NFT īpašumtiesības...',
-                'manifest-label': 'Arweave manifests',
+                'manifest-label': 'Arweave manifests (TX ID vai ar://)',
                 'manifest-placeholder': 'ar://ABC123... vai https://ar-io.dev/raw/ABC123...',
                 'master-key-label': 'Master atslēga',
                 'master-key-placeholder': 'Ievadi savu master atslēgu...',
@@ -231,28 +197,18 @@
                 'extracting': '📂 Izvelk failus...',
                 'creating-zip': '📦 Veido ZIP ar',
                 'restore-complete': '✅ Repozitorijs atjaunots!',
-                'enter-manifest': '❌ Ievadi manifesta TX ID!',
-                'connect-first': '❌ Vispirms savieno maku!',
+                'enter-manifest': '❌ Ievadi manifesta TX ID vai ar:// saiti!',
                 'enter-master-key': 'Ievadi master atslēgu!',
                 'invalid-manifest': 'Nederīgs manifests!',
                 'fetch-error': 'Neizdevās lejupielādēt',
                 'files-restored': 'Faili',
                 'zip-archives': 'ZIP arhīvi',
-                'error': '❌ Kļūda',
-                'signing-challenge': '⏳ Paraksti challenge...'
+                'error': '❌ Kļūda'
             },
             en: {
                 'restore-title': '🔓 PermRepo Restore',
                 'restore-subtitle': 'Restore GitHub repo from Arweave — no server!',
-                'wallet-label': 'Connected wallet',
-                'wallet-not-connected': 'Not connected',
-                'wallet-connected': 'Connected',
-                'connect-wallet': '🔌 Connect wallet',
-                'nft-label': 'NFT Token ID',
-                'nft-found': '✅ NFT found!',
-                'nft-not-found': '❌ NFT not found for this wallet',
-                'nft-verifying': '⏳ Verifying NFT ownership...',
-                'manifest-label': 'Arweave manifest',
+                'manifest-label': 'Arweave manifest (TX ID or ar://)',
                 'manifest-placeholder': 'ar://ABC123... or https://ar-io.dev/raw/ABC123...',
                 'master-key-label': 'Master key',
                 'master-key-placeholder': 'Enter your master key...',
@@ -263,28 +219,18 @@
                 'extracting': '📂 Extracting files...',
                 'creating-zip': '📦 Creating ZIP with',
                 'restore-complete': '✅ Repository restored!',
-                'enter-manifest': '❌ Enter manifest TX ID!',
-                'connect-first': '❌ Connect wallet first!',
+                'enter-manifest': '❌ Enter manifest TX ID or ar:// link!',
                 'enter-master-key': 'Enter master key!',
                 'invalid-manifest': 'Invalid manifest!',
                 'fetch-error': 'Failed to download',
                 'files-restored': 'Files',
                 'zip-archives': 'ZIP archives',
-                'error': '❌ Error',
-                'signing-challenge': '⏳ Signing challenge...'
+                'error': '❌ Error'
             },
             eo: {
                 'restore-title': '🔓 PermRepo Restarigo',
                 'restore-subtitle': 'Restarigu GitHub-deponejon el Arweave — sen servilo!',
-                'wallet-label': 'Konektita monujo',
-                'wallet-not-connected': 'Ne konektita',
-                'wallet-connected': 'Konektita',
-                'connect-wallet': '🔌 Konekti monujon',
-                'nft-label': 'NFT Ĵetono ID',
-                'nft-found': '✅ NFT trovita!',
-                'nft-not-found': '❌ NFT ne trovita por ĉi tiu monujo',
-                'nft-verifying': '⏳ Kontrolante NFT-proprieton...',
-                'manifest-label': 'Arweave-manifesto',
+                'manifest-label': 'Arweave-manifesto (TX-ID aŭ ar://)',
                 'manifest-placeholder': 'ar://ABC123... aŭ https://ar-io.dev/raw/ABC123...',
                 'master-key-label': 'Ĉefŝlosilo',
                 'master-key-placeholder': 'Enigu vian ĉefŝlosilon...',
@@ -295,15 +241,13 @@
                 'extracting': '📂 Eltirante dosierojn...',
                 'creating-zip': '📦 Kreante ZIP kun',
                 'restore-complete': '✅ Deponejo restarigita!',
-                'enter-manifest': '❌ Enigu manifestan TX-ID!',
-                'connect-first': '❌ Unue konektu monujon!',
+                'enter-manifest': '❌ Enigu manifestan TX-ID aŭ ar:// ligilon!',
                 'enter-master-key': 'Enigu ĉefŝlosilon!',
                 'invalid-manifest': 'Nevalida manifesto!',
                 'fetch-error': 'Ne sukcesis elŝuti',
                 'files-restored': 'Dosieroj',
                 'zip-archives': 'ZIP-arkivaj',
-                'error': '❌ Eraro',
-                'signing-challenge': '⏳ Subskribante defion...'
+                'error': '❌ Eraro'
             }
         };
         
@@ -360,96 +304,6 @@
             return fetchFromArweave(txId, gatewayIndex + 1);
         }
         
-        async function connectWallet() {
-            if (!window.ethereum) {
-                showStatus('❌ Lūdzu instalē maku!', 'error');
-                return;
-            }
-            
-            try {
-                const provider = new ethers.BrowserProvider(window.ethereum);
-                signer = await provider.getSigner();
-                userAddress = await signer.getAddress();
-                
-                document.getElementById('walletStatus').textContent = `${t('wallet-connected')}: ${userAddress.substring(0, 10)}...`;
-                
-                await loadNFTInfo();
-            } catch (e) {
-                showStatus('❌ ' + e.message, 'error');
-            }
-        }
-        
-        async function loadNFTInfo() {
-            try {
-                const configResponse = await fetch('/api/config');
-                CONFIG = await configResponse.json();
-                
-                const provider = new ethers.BrowserProvider(window.ethereum);
-                const nftContract = new ethers.Contract(CONFIG.nftAddress, [
-                    "function balanceOf(address owner) external view returns (uint256)",
-                    "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)",
-                    "function ownerOf(uint256 tokenId) external view returns (address)",
-                    "function getManifestURI(uint256 tokenId) external view returns (string)"
-                ], provider);
-                
-                const balance = await nftContract.balanceOf(userAddress);
-                
-                document.getElementById('nftSection').style.display = 'block';
-                
-                if (balance === 0n) {
-                    document.getElementById('nftStatus').textContent = t('nft-not-found');
-                    document.getElementById('nftStatus').className = 'status error';
-                    return;
-                }
-                
-                // Parāda pirmo NFT
-                const tokenId = await nftContract.tokenOfOwnerByIndex(userAddress, 0);
-                document.getElementById('nftTokenId').textContent = tokenId.toString();
-                
-                // Pārbauda NFT īpašumtiesības
-                showStatus(t('nft-verifying'), 'status');
-                
-                const owner = await nftContract.ownerOf(tokenId);
-                
-                if (owner.toLowerCase() !== userAddress.toLowerCase()) {
-                    document.getElementById('nftStatus').textContent = t('nft-not-found');
-                    document.getElementById('nftStatus').className = 'status error';
-                    return;
-                }
-                
-                // Wallet challenge paraksts
-                showStatus(t('signing-challenge'), 'status');
-                
-                const challenge = `PermRepo Restore Challenge\nToken ID: ${tokenId}\nWallet: ${userAddress}\nTimestamp: ${Date.now()}`;
-                const signature = await signer.signMessage(challenge);
-                
-                // Pārbauda parakstu
-                const recoveredAddress = ethers.verifyMessage(challenge, signature);
-                
-                if (recoveredAddress.toLowerCase() !== userAddress.toLowerCase()) {
-                    document.getElementById('nftStatus').textContent = t('nft-not-found');
-                    document.getElementById('nftStatus').className = 'status error';
-                    return;
-                }
-                
-                document.getElementById('nftStatus').textContent = t('nft-found');
-                document.getElementById('nftStatus').className = 'status success';
-                
-                // Parāda restore sadaļu
-                document.getElementById('restoreSection').style.display = 'block';
-                
-                // Automātiski aizpilda manifesta URI no NFT
-                const manifestURI = await nftContract.getManifestURI(tokenId);
-                if (manifestURI && manifestURI.startsWith('ar://')) {
-                    document.getElementById('manifestInput').value = manifestURI.slice(5);
-                }
-                
-            } catch (e) {
-                document.getElementById('nftStatus').textContent = '❌ ' + e.message;
-                document.getElementById('nftStatus').className = 'status error';
-            }
-        }
-        
         function getMasterKeyFromInput() {
             const input = document.getElementById('masterKeyInput').value.trim();
             if (!input) throw new Error(t('enter-master-key'));
@@ -489,17 +343,18 @@
                 return;
             }
             
-            if (!signer) {
-                showStatus(t('connect-first'), 'error');
-                return;
-            }
-            
             let manifestTxId = manifestInput;
             if (manifestInput.startsWith('ar://')) manifestTxId = manifestInput.slice(5);
             else if (manifestInput.includes('/raw/')) manifestTxId = manifestInput.split('/raw/')[1];
+            else if (manifestInput.includes('ar-io.dev/')) manifestTxId = manifestInput.split('ar-io.dev/')[1];
+            else if (manifestInput.includes('arweave.net/')) manifestTxId = manifestInput.split('arweave.net/')[1];
             
             const button = document.getElementById('restoreBtn');
             button.disabled = true;
+            button.textContent = '⏳';
+            
+            document.getElementById('debugInfo').innerHTML = '';
+            document.getElementById('debugInfo').style.display = 'none';
             
             try {
                 showStatus(t('download-manifest'), 'status');
@@ -507,9 +362,13 @@
                 
                 const manifestBuffer = await fetchFromArweave(manifestTxId);
                 const manifestText = new TextDecoder().decode(manifestBuffer);
+                showDebug('Manifests: ' + manifestText.substring(0, 500));
+                
                 const manifest = JSON.parse(manifestText);
                 
                 if (!manifest.paths) throw new Error(t('invalid-manifest'));
+                
+                showDebug('Failu skaits paths: ' + Object.keys(manifest.paths).length);
                 
                 const encryptionIVs = manifest.encryption?.ivs || {};
                 const zipIds = new Set();
@@ -523,6 +382,8 @@
                     }
                 }
                 
+                showDebug('Unikālie ZIP: ' + zipIds.size);
+                
                 showStatus(`${t('download-zip')} (${zipIds.size})`, 'status');
                 showProgress(20);
                 
@@ -530,6 +391,8 @@
                 let zipIndex = 0;
                 
                 for (const zipId of zipIds) {
+                    showDebug('Lejupielādē: ' + zipId);
+                    
                     const zipBuffer = await fetchFromArweave(zipId);
                     let decryptedZipBuffer = zipBuffer;
                     
@@ -537,16 +400,18 @@
                     if (iv && Array.isArray(iv) && iv.length === 12) {
                         try {
                             decryptedZipBuffer = await decryptData(zipBuffer, iv, masterKey);
+                            showDebug('✅ Atšifrēts: ' + zipId);
                         } catch (e) {
-                            showDebug(`⚠️ ${zipId}: ${e.message}`);
+                            showDebug('⚠️ Neizdevās atšifrēt ' + zipId + ': ' + e.message);
                         }
                     }
                     
                     try {
                         const zip = await JSZip.loadAsync(decryptedZipBuffer);
                         zipContents[zipId] = zip;
+                        showDebug('✅ Izpakots: ' + zipId);
                     } catch (e) {
-                        showDebug(`❌ ${zipId}: ${e.message}`);
+                        showDebug('❌ Neizdevās izpakot ' + zipId + ': ' + e.message);
                     }
                     
                     zipIndex++;
@@ -573,8 +438,13 @@
                         if (matchingFile && !matchingFile.dir) fileData = await matchingFile.async('uint8array');
                     }
                     
-                    if (fileData) finalFiles[filePath] = fileData;
+                    if (fileData) {
+                        finalFiles[filePath] = fileData;
+                        showDebug('✅ Atjaunots: ' + filePath);
+                    }
                 }
+                
+                showDebug('Kopā atjaunoti: ' + Object.keys(finalFiles).length);
                 
                 showStatus(`${t('creating-zip')} ${Object.keys(finalFiles).length}`, 'status');
                 showProgress(80);
@@ -597,13 +467,15 @@
                 URL.revokeObjectURL(url);
                 
                 hideProgress();
-                showStatus(`${t('restore-complete')}\n${t('files-restored')}: ${Object.keys(finalFiles).length}`, 'success');
+                showStatus(`${t('restore-complete')}\n${t('files-restored')}: ${Object.keys(finalFiles).length}\n${t('zip-archives')}: ${zipIds.size}`, 'success');
                 
             } catch (e) {
+                console.error('Kļūda:', e);
                 hideProgress();
                 showStatus(`${t('error')}: ${e.message}`, 'error');
             } finally {
                 button.disabled = false;
+                button.textContent = t('restore-btn');
             }
         }
         
@@ -619,6 +491,14 @@
         
         document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
             el.placeholder = t(el.dataset.i18nPlaceholder);
+        });
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const manifestParam = urlParams.get('manifest');
+            if (manifestParam) {
+                document.getElementById('manifestInput').value = manifestParam;
+            }
         });
     </script>
 </body>
