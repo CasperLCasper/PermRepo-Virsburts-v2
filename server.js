@@ -88,10 +88,9 @@ const TREASURY_ABI = [
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
 
 // ==================================================
-// VIENKĀRŠĀS DROŠĪBAS GALVENES (bez CSP — lai GitHub OAuth strādā)
+// DROŠĪBAS GALVENES — PIRMS express.static() UN VISIEM ROUTES
 // ==================================================
 
 app.use((req, res, next) => {
@@ -109,6 +108,8 @@ app.use((req, res, next) => {
     
     next();
 });
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(session({
     secret: SESSION_SECRET,
