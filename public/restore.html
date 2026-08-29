@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PermRepo — Atjaunošana</title>
+    
+    <meta http-equiv="Content-Security-Policy" 
+        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src https://ar-io.dev https://arweave.net;">
+    
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -198,7 +202,6 @@
     <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" integrity="sha256-dOAMPiqczTEubVFU+cywkR0bNMtJvIIgJEopKgp3PCE=" crossorigin="anonymous"></script>
     
     <script>
-        // ... viss pārējais JavaScript kods paliek NEMAINĪGS ...
         const { ethers } = window;
         
         const GATEWAYS = ['https://ar-io.dev', 'https://arweave.net'];
