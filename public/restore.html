@@ -6,7 +6,7 @@
     <title>PermRepo — Atjaunošana</title>
     
     <meta http-equiv="Content-Security-Policy" 
-        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src https://ar-io.dev https://arweave.net;">
+        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://ar-io.dev https://arweave.net https://sepolia.base.org https://base-sepolia-rpc.publicnode.com; object-src 'none';">
     
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -166,7 +166,7 @@
             <span class="info-label" data-i18n="wallet-label">Savienotais maks</span>
             <span class="info-value" id="walletStatus" data-i18n="wallet-not-connected">Nav savienots</span>
         </div>
-        <button id="connectWalletBtn" onclick="connectWallet()" data-i18n="connect-wallet">🔌 Savienot maku</button>
+        <button id="connectWalletBtn" data-i18n="connect-wallet">🔌 Savienot maku</button>
         
         <div id="manifestSection" style="display: none;">
             <div class="info-row">
@@ -174,7 +174,7 @@
             </div>
             <input type="text" id="manifestInput" data-i18n-placeholder="manifest-placeholder" placeholder="ar://ABC123... vai https://ar-io.dev/raw/ABC123...">
             
-            <button id="verifyBtn" onclick="verifyNFTOwnership()" data-i18n="verify-nft">Pārbaudīt NFT īpašumtiesības</button>
+            <button id="verifyBtn" data-i18n="verify-nft">Pārbaudīt NFT īpašumtiesības</button>
         </div>
         
         <div id="nftVerificationSection" style="display: none;">
@@ -187,7 +187,7 @@
             </div>
             <textarea id="masterKeyInput" data-i18n-placeholder="master-key-placeholder" placeholder="Ievadi savu master atslēgu..."></textarea>
             
-            <button id="restoreBtn" onclick="restoreRepo()" data-i18n="restore-btn">📥 Atjaunot repozitoriju</button>
+            <button id="restoreBtn" data-i18n="restore-btn">📥 Atjaunot repozitoriju</button>
         </div>
         
         <div class="progress" id="progress">
@@ -206,10 +206,16 @@
         
         const GATEWAYS = ['https://ar-io.dev', 'https://arweave.net'];
         
+        // HARDCODE KONFIGURĀCIJA — AIZSTĀJ AR SAVĀM VĒRTĪBĀM
+        const CONFIG = {
+            nftAddress: "0xD6FD81833d5F6AbFAa86736b17EF6444Ff9eEb71",  // ← IEVADI SAVU NFT ADRESI
+            chainId: 11155420,     // Base Sepolia chain ID
+            arweaveGateway: "https://ar-io.dev"
+        };
+        
         let userAddress = null;
         let signer = null;
         let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
-        let CONFIG = {};
         let manifestData = null;
         let isAuthorized = false;
         let nftTokenId = null;
@@ -439,11 +445,6 @@
                     ethers.AbiCoder.defaultAbiCoder().encode(['string'], [repoName])
                 );
                 
-                if (!CONFIG.nftAddress) {
-                    const configResponse = await fetch('/api/config');
-                    CONFIG = await configResponse.json();
-                }
-                
                 showStatus(t('nft-verifying'), 'status');
                 showProgress(20);
                 
@@ -666,9 +667,15 @@
             }
         }
         
+        // EVENT LISTENERS
+        document.getElementById('connectWalletBtn').addEventListener('click', connectWallet);
+        document.getElementById('verifyBtn').addEventListener('click', verifyNFTOwnership);
+        document.getElementById('restoreBtn').addEventListener('click', restoreRepo);
+        
+        // INICIALIZĀCIJA
         document.querySelectorAll('.lang-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
-            btn.onclick = () => switchLanguage(btn.dataset.lang);
+            btn.addEventListener('click', () => switchLanguage(btn.dataset.lang));
         });
         
         document.querySelectorAll('[data-i18n]').forEach(el => {
