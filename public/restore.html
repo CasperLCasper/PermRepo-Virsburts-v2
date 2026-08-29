@@ -158,14 +158,12 @@
         <h1 data-i18n="restore-title">🔓 PermRepo Atjaunošana</h1>
         <p class="subtitle" data-i18n="restore-subtitle">Atjauno GitHub repo no Arweave — bez servera!</p>
         
-        <!-- 1. Wallet savienošana -->
         <div class="info-row">
             <span class="info-label" data-i18n="wallet-label">Savienotais maks</span>
             <span class="info-value" id="walletStatus" data-i18n="wallet-not-connected">Nav savienots</span>
         </div>
         <button id="connectWalletBtn" onclick="connectWallet()" data-i18n="connect-wallet">🔌 Savienot maku</button>
         
-        <!-- 2. Manifesta ievade -->
         <div id="manifestSection" style="display: none;">
             <div class="info-row">
                 <span class="info-label" data-i18n="manifest-label">Arweave manifests (TX ID vai ar://)</span>
@@ -175,12 +173,10 @@
             <button id="verifyBtn" onclick="verifyNFTOwnership()" data-i18n="verify-nft">Pārbaudīt NFT īpašumtiesības</button>
         </div>
         
-        <!-- 3. NFT verifikācijas rezultāts -->
         <div id="nftVerificationSection" style="display: none;">
             <div id="nftVerificationStatus" class="status"></div>
         </div>
         
-        <!-- 4. MK ievade (tikai pēc autorizācijas) -->
         <div id="masterKeySection" style="display: none;">
             <div class="info-row">
                 <span class="info-label" data-i18n="master-key-label">Master atslēga</span>
@@ -198,10 +194,11 @@
         <div id="debugInfo" class="debug-info"></div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha256-rMfkFFWoB2W1/Zx+4bgHim0WC7vKRVrq6FTeZclH1Z4=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" integrity="sha256-dOAMPiqczTEubVFU+cywkR0bNMtJvIIgJEopKgp3PCE=" crossorigin="anonymous"></script>
     
     <script>
+        // ... viss pārējais JavaScript kods paliek NEMAINĪGS ...
         const { ethers } = window;
         
         const GATEWAYS = ['https://ar-io.dev', 'https://arweave.net'];
@@ -393,7 +390,6 @@
                 
                 document.getElementById('walletStatus').textContent = `${t('wallet-connected')}: ${userAddress.substring(0, 10)}...`;
                 
-                // Parāda manifesta ievades sadaļu
                 document.getElementById('manifestSection').style.display = 'block';
                 
                 showStatus('✅', 'success');
@@ -425,12 +421,10 @@
             showProgress(10);
             
             try {
-                // Lejupielādē manifestu
                 const manifestBuffer = await fetchFromArweave(manifestTxId);
                 const manifestText = new TextDecoder().decode(manifestBuffer);
                 manifestData = JSON.parse(manifestText);
                 
-                // Iegūst repo nosaukumu no manifesta
                 const repoName = manifestData.metadata?.repo;
                 if (!repoName) {
                     throw new Error(t('invalid-manifest'));
@@ -438,18 +432,15 @@
                 
                 showDebug('Repo: ' + repoName);
                 
-                // Aprēķina repo hash
                 const repoHash = ethers.keccak256(
                     ethers.AbiCoder.defaultAbiCoder().encode(['string'], [repoName])
                 );
                 
-                // Iegūst konfigurāciju
                 if (!CONFIG.nftAddress) {
                     const configResponse = await fetch('/api/config');
                     CONFIG = await configResponse.json();
                 }
                 
-                // NFT ownership pārbaude
                 showStatus(t('nft-verifying'), 'status');
                 showProgress(20);
                 
@@ -471,7 +462,6 @@
                 showDebug('✅ NFT Token ID: ' + nftTokenId.toString());
                 showDebug('✅ NFT Owner: ' + nftOwner);
                 
-                // Wallet challenge paraksts
                 showStatus(t('signing-challenge'), 'status');
                 showProgress(30);
                 
@@ -484,7 +474,6 @@
                 
                 const signature = await signer.signMessage(challenge);
                 
-                // Pārbauda parakstu
                 const recoveredAddress = ethers.verifyMessage(challenge, signature);
                 
                 if (recoveredAddress.toLowerCase() !== userAddress.toLowerCase()) {
@@ -493,14 +482,12 @@
                 
                 showDebug('✅ Paraksts verificēts: ' + recoveredAddress);
                 
-                // Autorizācija veiksmīga
                 isAuthorized = true;
                 
                 document.getElementById('nftVerificationSection').style.display = 'block';
                 document.getElementById('nftVerificationStatus').textContent = t('nft-found');
                 document.getElementById('nftVerificationStatus').className = 'status success';
                 
-                // Parāda MK ievades sadaļu
                 document.getElementById('masterKeySection').style.display = 'block';
                 
                 showProgress(40);
@@ -676,7 +663,6 @@
             }
         }
         
-        // Init
         document.querySelectorAll('.lang-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
             btn.onclick = () => switchLanguage(btn.dataset.lang);
