@@ -97,13 +97,14 @@ app.use((req, res, next) => {
     // 1. Content Security Policy (CSP) — ar GitHub OAuth atbalstu
     res.setHeader('Content-Security-Policy', 
         "default-src 'self'; " +
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
+        "script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
         "style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data: blob:; " +
         "font-src 'self'; " +
         "connect-src 'self' https://ar-io.dev https://arweave.net https://api.github.com https://github.com https://sepolia.base.org https://base-sepolia-rpc.publicnode.com; " +
         "form-action 'self' https://github.com; " +
-        "frame-ancestors 'none';"
+        "frame-ancestors 'none'; " +
+        "object-src 'none';"
     );
     
     // 2. Strict Transport Security (HSTS)
