@@ -90,11 +90,56 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ==================================================
+// DROŠĪBAS GALVENES
+// ==================================================
+
+app.use((req, res, next) => {
+    // 1. Content Security Policy (CSP)
+    res.setHeader('Content-Security-Policy', 
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: blob:; " +
+        "font-src 'self'; " +
+        "connect-src 'self' https://ar-io.dev https://arweave.net https://api.github.com https://sepolia.base.org https://base-sepolia-rpc.publicnode.com; " +
+        "frame-ancestors 'none';"
+    );
+    
+    // 2. Strict Transport Security (HSTS)
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    
+    // 3. X-Content-Type-Options
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    
+    // 4. X-Frame-Options
+    res.setHeader('X-Frame-Options', 'DENY');
+    
+    // 5. Referrer-Policy
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    
+    // 6. Permissions-Policy
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    
+    // 7. Cross-Origin-Opener-Policy
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    
+    // 8. Cross-Origin-Resource-Policy
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    
+    next();
+});
+
 app.use(session({
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: false, httpOnly: true, maxAge: 3600000 }
+    cookie: { 
+        secure: true, 
+        httpOnly: true, 
+        sameSite: 'lax',
+        maxAge: 3600000 
+    }
 }));
 
 function getProvider() {
