@@ -94,16 +94,19 @@ app.use(express.urlencoded({ extended: true }));
 // ==================================================
 
 app.use((req, res, next) => {
-    // 1. X-Content-Type-Options
+    // 1. Strict Transport Security (HSTS)
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    
+    // 2. X-Content-Type-Options
     res.setHeader('X-Content-Type-Options', 'nosniff');
     
-    // 2. X-Frame-Options
+    // 3. X-Frame-Options
     res.setHeader('X-Frame-Options', 'DENY');
     
-    // 3. Referrer-Policy
+    // 4. Referrer-Policy
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     
-    // 4. Permissions-Policy
+    // 5. Permissions-Policy
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     
     next();
