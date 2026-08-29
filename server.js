@@ -91,18 +91,19 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ==================================================
-// DROŠĪBAS GALVENES
+// DROŠĪBAS GALVENES — ar GitHub OAuth atbalstu
 // ==================================================
 
 app.use((req, res, next) => {
-    // 1. Content Security Policy (CSP)
+    // 1. Content Security Policy (CSP) — ar GitHub OAuth atbalstu
     res.setHeader('Content-Security-Policy', 
         "default-src 'self'; " +
         "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
         "style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data: blob:; " +
         "font-src 'self'; " +
-        "connect-src 'self' https://ar-io.dev https://arweave.net https://api.github.com https://sepolia.base.org https://base-sepolia-rpc.publicnode.com; " +
+        "connect-src 'self' https://ar-io.dev https://arweave.net https://api.github.com https://github.com https://sepolia.base.org https://base-sepolia-rpc.publicnode.com; " +
+        "form-action 'self' https://github.com; " +
         "frame-ancestors 'none';"
     );
     
@@ -391,7 +392,7 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
 }
 
 // ==================================================
-// PREPARE BACKUP — ZIP izmaksas
+// PREPARE BACKUP
 // ==================================================
 
 app.post('/api/prepare-backup', async (req, res) => {
@@ -685,7 +686,7 @@ app.post('/api/execute-backup', async (req, res) => {
 });
 
 // ==================================================
-// FINALIZE MANIFEST — 2. POSMS: Manifesta apmaksa + augšupielāde
+// FINALIZE MANIFEST — 2. POSMS
 // ==================================================
 
 app.post('/api/finalize-manifest', async (req, res) => {
@@ -714,7 +715,6 @@ app.post('/api/finalize-manifest', async (req, res) => {
         
         const turbo = getTurbo();
         
-        // 1. MANIFESTA IZVEIDE
         const backupCount = Number(await nftContract.getBackupCount(tokenId));
         const newBackupNumber = backupCount + 1;
         
@@ -780,7 +780,6 @@ app.post('/api/finalize-manifest', async (req, res) => {
         logInfo('Faktiskais izmērs', manifestSize + ' bytes');
         logInfo('Faktiskais izmērs (KB)', (manifestSize / 1024).toFixed(2) + ' KB');
         
-        // 2. PRECĪZAS MANIFESTA IZMAKSAS no faktiskā izmēra
         const costs = await turbo.getUploadCosts({ bytes: [manifestSize] });
         const manifestWinc = BigInt(String(costs[0]?.winc || '0'));
         logInfo('Winc izmaksas', manifestWinc.toString());
@@ -789,7 +788,6 @@ app.post('/api/finalize-manifest', async (req, res) => {
         const manifestCostEth = String(tokenPrice);
         logInfo('Base ETH cena', manifestCostEth + ' ETH');
         
-        // 3. Redis kredītu pārbaude
         const userCredits = await getUserCredits(walletAddress);
         
         logSection('💰 REDIS GRĀMATVEDĪBA');
@@ -807,7 +805,6 @@ app.post('/api/finalize-manifest', async (req, res) => {
             logInfo('Nepietiek kredītu', 'Jāiemaksā ' + manifestCostEth + ' Base ETH');
         }
         
-        // 4. MANIFESTA APMAKSA
         const manifestCostWei = ethers.parseEther(manifestCostEth);
         
         logSection('💳 MANIFESTA APMAKSA');
@@ -834,7 +831,6 @@ app.post('/api/finalize-manifest', async (req, res) => {
             logSuccess('Izmanto Redis kredītus manifestam');
         }
         
-        // 5. MANIFESTA AUGŠUPIELĀDE
         try {
             const manifestResult = await turbo.uploadFile({
                 fileStreamFactory: () => Readable.from(manifestBuffer),
