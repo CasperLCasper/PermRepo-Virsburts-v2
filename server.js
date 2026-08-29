@@ -94,19 +94,31 @@ app.use(express.urlencoded({ extended: true }));
 // ==================================================
 
 app.use((req, res, next) => {
-    // 1. Strict Transport Security (HSTS)
+    // 1. Content Security Policy (CSP) — ar GitHub OAuth atbalstu
+    res.setHeader('Content-Security-Policy', 
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: blob:; " +
+        "font-src 'self'; " +
+        "connect-src 'self' https://ar-io.dev https://arweave.net https://api.github.com https://github.com https://sepolia.base.org https://base-sepolia-rpc.publicnode.com; " +
+        "form-action 'self' https://github.com; " +
+        "frame-ancestors 'none';"
+    );
+    
+    // 2. Strict Transport Security (HSTS)
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     
-    // 2. X-Content-Type-Options
+    // 3. X-Content-Type-Options
     res.setHeader('X-Content-Type-Options', 'nosniff');
     
-    // 3. X-Frame-Options
+    // 4. X-Frame-Options
     res.setHeader('X-Frame-Options', 'DENY');
     
-    // 4. Referrer-Policy
+    // 5. Referrer-Policy
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     
-    // 5. Permissions-Policy
+    // 6. Permissions-Policy
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     
     next();
