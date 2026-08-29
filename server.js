@@ -34,7 +34,6 @@ const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toSt
 const TURBO_TOKEN = process.env.TURBO_TOKEN || 'base-eth';
 const TURBO_UPLOAD_URL = process.env.TURBO_UPLOAD_URL || 'https://upload.services.ar-io.dev';
 const TURBO_PAYMENT_URL = process.env.TURBO_PAYMENT_URL || 'https://payment.services.ar-io.dev';
-const RESTORE_PAGE_PRIVATE_KEY = process.env.RESTORE_PAGE_PRIVATE_KEY;
 
 initRedis();
 
@@ -921,50 +920,6 @@ app.post('/api/finalize-backup', async (req, res) => {
 });
 
 // ==================================================
-// UPLOAD RESTORE PAGE
-// ==================================================
-
-app.post('/api/upload-restore', async (req, res) => {
-    try {
-        if (!RESTORE_PAGE_PRIVATE_KEY) {
-            return res.status(500).json({ success: false, error: 'RESTORE_PAGE_PRIVATE_KEY nav konfigurēts' });
-        }
-        
-        const turbo = TurboFactory.authenticated({
-            signer: new EthereumSigner(RESTORE_PAGE_PRIVATE_KEY),
-            token: TURBO_TOKEN,
-            gatewayUrl: 'https://sepolia.base.org',
-            uploadServiceConfig: { url: TURBO_UPLOAD_URL },
-            paymentServiceConfig: { url: TURBO_PAYMENT_URL }
-        });
-        
-        const response = await fetch(`${req.protocol}://${req.get('host')}/restore.html`);
-        const htmlText = await response.text();
-        const fileBuffer = Buffer.from(htmlText, 'utf8');
-        
-        const result = await turbo.uploadFile({
-            fileStreamFactory: () => Readable.from(fileBuffer),
-            fileSizeFactory: () => fileBuffer.length,
-            dataItemOpts: {
-                tags: [
-                    { name: 'App-Name', value: 'PermRepo' },
-                    { name: 'Type', value: 'restore-page' },
-                    { name: 'Content-Type', value: 'text/html' },
-                    { name: 'Title', value: 'PermRepo Restore' }
-                ]
-            }
-        });
-        
-        logSuccess(`RESTORE PAGE TX ID: ${result.id}`);
-        
-        res.json({ success: true, txId: result.id });
-    } catch (error) {
-        logError('Restore page augšupielādes kļūda: ' + errorMessage(error));
-        res.status(500).json({ success: false, error: errorMessage(error) });
-    }
-});
-
-// ==================================================
 // KREDĪTU STATUS
 // ==================================================
 
@@ -995,7 +950,6 @@ app.get('/api/health', (req, res) => {
         configured: {
             rpc: !!RPC_URL,
             operatorKey: !!OPERATOR_PRIVATE_KEY,
-            restorePageKey: !!RESTORE_PAGE_PRIVATE_KEY,
             treasury: !!TREASURY_ADDRESS,
             nft: !!NFT_ADDRESS,
             subscription: !!SUBSCRIPTION_ADDRESS,
@@ -1017,7 +971,6 @@ app.listen(PORT, () => {
     logInfo('NFT_ADDRESS', NFT_ADDRESS || '❌ NAV');
     logInfo('SUBSCRIPTION_ADDRESS', SUBSCRIPTION_ADDRESS || '❌ NAV');
     logInfo('USDC_ADDRESS', USDC_ADDRESS || '❌ NAV');
-    logInfo('RESTORE_PAGE_PRIVATE_KEY', RESTORE_PAGE_PRIVATE_KEY ? '✅ IR' : '❌ NAV');
     logInfo('Redis', getRedis() ? '✅ IR' : '❌ NAV');
     console.log('='.repeat(60) + '\n');
 });
