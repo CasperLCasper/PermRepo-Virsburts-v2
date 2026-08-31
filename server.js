@@ -731,9 +731,15 @@ app.post('/api/finalize-manifest', async (req, res) => {
         }
         history.sort((a, b) => Number(b.backupNumber) - Number(a.backupNumber));
         
-        const encryptionIVs = { ...(previousEncryptionIVs || {}) };
+        const encryptionIVs = Object.create(null);
+        Object.assign(encryptionIVs, previousEncryptionIVs || {});
         if (iv && Array.isArray(iv)) {
-            encryptionIVs[zipTxId] = iv;
+            Object.defineProperty(encryptionIVs, zipTxId, {
+                value: iv,
+                writable: true,
+                enumerable: true,
+                configurable: true
+            });
         }
         
         const manifest = {
