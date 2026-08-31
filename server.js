@@ -45,14 +45,8 @@ function logSection(title) {
 }
 
 function logInfo(label, value) {
-    if (typeof value === 'string') {
-        const safeValue = value.replace(/[\r\n\t]/g, ' ').substring(0, 50);
-        console.log(`   ${label}: ${safeValue}`);
-    } else if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-        console.log(`   ${label}: ${value}`);
-    } else {
-        console.log(`   ${label}: [${typeof value}]`);
-    }
+    const safeValue = String(value).replace(/[\r\n\t]/g, ' ').substring(0, 50);
+    console.log(`   ${label}: ${safeValue}`);
 }
 
 function logSuccess(message) {
