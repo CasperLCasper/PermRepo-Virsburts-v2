@@ -458,7 +458,7 @@ async function executeZipUpload() {
         
         const zip = new JSZip();
         for (const file of files) {
-            const fileBuffer = Uint8Array.from(atob(file.content), c => c.charCodeAt(0));
+            const fileBuffer = Uint8Array.from(atob(file.content), c => c.codePointAt(0));
             zip.file(file.path, fileBuffer);
         }
         
@@ -629,7 +629,7 @@ async function finalizeManifest(zipTxId, button) {
         const domain = {
             name: 'PermRepo',
             version: '1',
-            chainId: parseInt(CONFIG.chainId, 16),
+            chainId: Number.parseInt(CONFIG.chainId, 16),
             verifyingContract: CONFIG.nftAddress
         };
         
@@ -674,7 +674,7 @@ async function finalizeManifest(zipTxId, button) {
             
             button.style.display = 'none';
             
-            const totalCostEth = (parseFloat(currentFileCostEth) + parseFloat(currentManifestCostEth)).toFixed(18);
+            const totalCostEth = (Number.parseFloat(currentFileCostEth) + Number.parseFloat(currentManifestCostEth)).toFixed(18);
             const fileSizeText = formatFileSize(currentFiles.reduce((sum, f) => sum + (f.size || 0), 0));
             
             document.getElementById('status').innerHTML = 
