@@ -13,6 +13,7 @@ let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
 let currentFileCostEth = '0';
 let currentManifestCostEth = '0';
 let currentFileWinc = '0';
+let currentManifestWinc = '0';
 let currentNewUserCredits = '0';
 let masterKey = null;
 let currentUnchangedFiles = {};
