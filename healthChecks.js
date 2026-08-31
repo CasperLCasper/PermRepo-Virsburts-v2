@@ -9,7 +9,7 @@ const BASE_RPC_URL = 'https://base-sepolia-rpc.publicnode.com';
 const TURBO_PAYMENT_URL = 'https://payment.services.ar-io.dev';
 const TURBO_UPLOAD_URL = 'https://upload.services.ar-io.dev';
 
-export async function checkArweaveGateway() {
+export const checkArweaveGateway = async () => {
     try {
         const response = await fetch(`${ARWEAVE_GATEWAY_URL}/raw/${KNOWN_ARWEAVE_TX}`, {
             method: 'HEAD'
@@ -20,7 +20,7 @@ export async function checkArweaveGateway() {
     }
 }
 
-export async function checkBaseRPC() {
+export const checkBaseRPC = async () => {
     try {
         const provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
         await provider.getBlockNumber();

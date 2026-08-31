@@ -18,7 +18,7 @@ export function calculateMerkleRoot(files) {
     return combinedHash;
 }
 
-export async function submitBackupWithMerkle(params) {
+export const submitBackupWithMerkle = async (params) => {
     const { 
         tokenId, 
         manifestTxId, 
