@@ -1,7 +1,8 @@
+/* global JSZip */
+
 // backup.js
 
 const { ethers } = window;
-
 let CONFIG = {};
 let userAddress = null;
 let signer = null;
