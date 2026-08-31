@@ -45,10 +45,14 @@ function logSection(title) {
 }
 
 function logInfo(label, value) {
-    if (typeof value === 'string' && value.length > 200) {
-        value = value.substring(0, 200) + '...';
+    if (typeof value === 'string') {
+        const safeValue = value.replace(/[\r\n\t]/g, ' ').substring(0, 50);
+        console.log(`   ${label}: ${safeValue}`);
+    } else if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+        console.log(`   ${label}: ${value}`);
+    } else {
+        console.log(`   ${label}: [${typeof value}]`);
     }
-    console.log(`   ${label}: ${value}`);
 }
 
 function logSuccess(message) {
@@ -345,7 +349,6 @@ app.get('/api/subscription/status', async (req, res) => {
 });
 
 async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
-    // Validācija pret GitHub API prasībām
     const ownerRegex = /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/;
     const repoRegex = /^[a-zA-Z0-9_.-]{1,100}$/;
     const pathRegex = /^[a-zA-Z0-9_./-]*$/;
