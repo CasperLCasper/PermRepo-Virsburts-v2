@@ -192,19 +192,19 @@ async function purchaseSubscription() {
         setStatus('Apstiprina USDC atļauju...');
         
         const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
+        const providerSigner = await provider.getSigner();
         
         const subscriptionContract = new ethers.Contract(CONFIG.subscriptionAddress, SUBSCRIPTION_ABI, provider);
         const price = await subscriptionContract.subscriptionPrice();
         
-        const usdcContract = new ethers.Contract(CONFIG.usdcAddress, USDC_ABI, signer);
+        const usdcContract = new ethers.Contract(CONFIG.usdcAddress, USDC_ABI, providerSigner);
         const approveTx = await usdcContract.approve(CONFIG.subscriptionAddress, price);
         await approveTx.wait();
         
         setStatus('Iegādājas abonementu...');
         
         const githubHash = ethers.keccak256(ethers.toUtf8Bytes(githubUser));
-        const subscribeTx = await subscriptionContract.connect(signer).subscribe(githubHash);
+        const subscribeTx = await subscriptionContract.connect(providerSigner).subscribe(githubHash);
         await subscribeTx.wait();
         
         setStatus('✅ Abonements iegādāts!');
@@ -350,8 +350,8 @@ async function mintNFT(repoName) {
         setStatus('Izveido NFT...');
         
         const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const nftWrite = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, signer);
+        const nftSigner = await provider.getSigner();
+        const nftWrite = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, nftSigner);
         
         const fullRepoName = `${githubUser}/${repoName}`;
         const nftImageURI = 'ar://placeholder';

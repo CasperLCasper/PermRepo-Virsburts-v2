@@ -308,7 +308,7 @@ async function generateMasterKey() {
     return ethers.hexlify(keyBytes);
 }
 
-function showMasterKey(masterKey) {
+function showMasterKey(keyToShow) {
     return new Promise((resolve) => {
         const modal = document.createElement('div');
         modal.style.cssText = `
@@ -323,7 +323,7 @@ function showMasterKey(masterKey) {
                 <h2 style="color: #79c0ff; margin-bottom: 16px;">${t('key-title')}</h2>
                 <p style="color: #b0b8c4; margin-bottom: 16px;">${t('key-description')}</p>
                 <div style="background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; word-break: break-all; font-family: monospace; color: #e6edf3;">
-                    ${masterKey}
+                    ${keyToShow}
                 </div>
                 <button id="copyKeyBtn" style="width: 100%; padding: 12px; background: #238636; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">${t('copy-key')}</button>
                 <button id="downloadKeyBtn" style="width: 100%; padding: 12px; background: #21262d; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 8px;">${t('download-key')}</button>
@@ -334,12 +334,12 @@ function showMasterKey(masterKey) {
         document.body.appendChild(modal);
         
         document.getElementById('copyKeyBtn').onclick = async () => {
-            await navigator.clipboard.writeText(masterKey);
+            await navigator.clipboard.writeText(keyToShow);
             document.getElementById('copyKeyBtn').textContent = '✅';
         };
         
         document.getElementById('downloadKeyBtn').onclick = () => {
-            const blob = new Blob([masterKey], { type: 'text/plain' });
+            const blob = new Blob([keyToShow], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
