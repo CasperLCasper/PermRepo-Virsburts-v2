@@ -134,7 +134,7 @@ async function init() {
     try {
         const configResponse = await fetch('/api/config');
         CONFIG = await configResponse.json();
-    } catch (e) {
+    } catch (_e) {
         showError('Neizdevās iegūt konfigurāciju');
         return;
     }
