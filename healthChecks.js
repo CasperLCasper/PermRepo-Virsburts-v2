@@ -29,6 +29,9 @@ export const checkBaseRPC = async () => {
         return false;
     }
 }
+        return false;
+    }
+}
 
 export async function checkTurboPayment() {
     try {
