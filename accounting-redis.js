@@ -29,13 +29,6 @@ export function initRedis() {
  * @param {string} walletAddress - Lietotāja maka adrese | User wallet address.
  * @returns {Promise<bigint>} - Kredītu bilance | Credits balance.
  */
-export const getUserCredits = (walletAddress) => {
-    initRedis();
-    const key = `credits:${walletAddress}`;
-    const creditsStr = await redis.get(key);
-    return creditsStr ? BigInt(creditsStr) : BigInt(0);
-};
- */
 export async function getUserCredits(walletAddress) {
     if (!redis) return 0n;
     
