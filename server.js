@@ -17,6 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.disable('x-powered-by');
 const PORT = process.env.PORT || 3000;
 
 const RPC_URL = process.env.RPC_URL;
@@ -44,6 +45,9 @@ function logSection(title) {
 }
 
 function logInfo(label, value) {
+    if (typeof value === 'string' && value.length > 200) {
+        value = value.substring(0, 200) + '...';
+    }
     console.log(`   ${label}: ${value}`);
 }
 
@@ -132,7 +136,7 @@ app.use(session({
     resave: false,
     saveUninitialized: true,
     cookie: { 
-        secure: false, 
+        secure: true,
         httpOnly: true, 
         sameSite: 'lax',
         maxAge: 3600000 
