@@ -18,6 +18,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
 const RPC_URL = process.env.RPC_URL;
@@ -134,7 +135,7 @@ app.use(session({
     resave: false,
     saveUninitialized: true,
     cookie: { 
-        secure: false,
+        secure: true,
         httpOnly: true, 
         sameSite: 'lax',
         maxAge: 3600000 
