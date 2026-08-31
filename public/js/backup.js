@@ -194,11 +194,11 @@ function applyTranslations() {
 
 function formatFileSize(bytes) {
     if (bytes < 1024) {
-        return bytes + ' B';
+        return `${bytes} B`;
     } else if (bytes < 1024 * 1024) {
-        return (bytes / 1024).toFixed(2) + ' KB';
+        return `${(bytes / 1024).toFixed(2)} KB`;
     } else {
-        return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+        return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
     }
 }
 
@@ -338,7 +338,6 @@ function showMasterKey(keyToShow) {
             await navigator.clipboard.writeText(keyToShow);
             document.getElementById('copyKeyBtn').textContent = '✅';
         };
-        
         document.getElementById('downloadKeyBtn').onclick = () => {
             const blob = new Blob([keyToShow], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
@@ -363,7 +362,7 @@ function showMasterKey(keyToShow) {
 async function prepareBackup() {
     const button = document.getElementById('startBackupButton');
     button.disabled = true;
-    button.textContent = '⏳ ' + t('preparing');
+    button.textContent = `⏳ ${t('preparing')}`;
     
     setStatus(t('preparing'));
     
