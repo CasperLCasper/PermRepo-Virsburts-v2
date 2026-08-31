@@ -341,13 +341,20 @@ app.get('/api/subscription/status', async (req, res) => {
 });
 
 async function getRepoFiles(githubToken, owner, repo, repoPath = '') {
+    // Validācija pret GitHub API prasībām
+    const ownerRegex = /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/;
+    const repoRegex = /^[a-zA-Z0-9_.-]{1,100}$/;
+    const pathRegex = /^[a-zA-Z0-9_./-]*$/;
+    
     if (!owner || !repo) throw new Error('Nederīgs owner vai repo');
+    if (!ownerRegex.test(owner)) throw new Error('Nederīgs owner nosaukums');
+    if (!repoRegex.test(repo)) throw new Error('Nederīgs repo nosaukums');
+    if (repoPath && !pathRegex.test(repoPath)) throw new Error('Nederīgs repo ceļš');
     
     const files = [];
     const encodedPath = repoPath ? repoPath.split('/').map(part => encodeURIComponent(part)).join('/') : '';
-    const url = encodedPath
-        ? `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}`
-        : `https://api.github.com/repos/${owner}/${repo}/contents`;
+    const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents`;
+    const url = encodedPath ? `${baseUrl}/${encodedPath}` : baseUrl;
     
     const response = await fetch(url, {
         headers: {
