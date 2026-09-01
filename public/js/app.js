@@ -148,7 +148,11 @@ async function init() {
         document.getElementById('userName').textContent = userData.user;
         document.getElementById('logoutButton').onclick = async () => {
             await fetch('/api/github/logout');
-            window.location.reload();
+            document.cookie.split(";").forEach(c => {
+                document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+            });
+            localStorage.clear();
+            window.location.href = '/?logout=' + Date.now();
         };
         
         await checkSubscription();
