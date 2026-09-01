@@ -302,6 +302,21 @@ function sameMetadata(a, b) {
     return true;
 }
 
+function parseIVFromFormData(iv) {
+    if (Array.isArray(iv)) {
+        return iv.length === 12 ? iv : null;
+    }
+    if (typeof iv === 'string') {
+        try {
+            const parsed = JSON.parse(iv);
+            return Array.isArray(parsed) && parsed.length === 12 ? parsed : null;
+        } catch {
+            return null;
+        }
+    }
+    return null;
+}
+
 // ==================================================
 // TURBO
 // ==================================================
@@ -509,7 +524,6 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '', state = nul
     const contents = await response.json();
     if (!Array.isArray(contents)) return state.files;
     
-    // Savāc visus failus šajā līmenī
     const filesToDownload = [];
     const subDirs = [];
     
@@ -530,7 +544,6 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '', state = nul
         }
     }
     
-    // Lejupielādē failus ar concurrency = 10
     for (let i = 0; i < filesToDownload.length; i += DOWNLOAD_CONCURRENCY) {
         const batch = filesToDownload.slice(i, i + DOWNLOAD_CONCURRENCY);
         const batchResults = await Promise.all(
@@ -548,7 +561,6 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '', state = nul
         }
     }
     
-    // Rekursīvi apstrādā apakšdirektorijas
     for (const dir of subDirs) {
         await getRepoFiles(githubToken, owner, repo, dir.path, state);
     }
@@ -783,7 +795,7 @@ app.post('/api/prepare-backup', async (req, res) => {
 });
 
 // ==================================================
-// EXECUTE BACKUP — ZIP — ar binary upload (multer)
+// EXECUTE BACKUP — ZIP — binary upload (multer)
 // ==================================================
 
 app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req, res) => {
@@ -807,15 +819,23 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
             return res.status(413).json({ success: false, error: 'Šifrētais ZIP ir pārāk liels.' });
         }
         
-        if (!Array.isArray(iv) || iv.length !== 12) {
+        const parsedIV = parseIVFromFormData(iv);
+        if (!parsedIV) {
             return res.status(400).json({ success: false, error: 'Nederīgs AES-GCM IV.' });
         }
         
-        if (!validateFileMetadata(fileMetadata)) {
+        let parsedFileMetadata;
+        try {
+            parsedFileMetadata = typeof fileMetadata === 'string' ? JSON.parse(fileMetadata) : fileMetadata;
+        } catch {
+            return res.status(400).json({ success: false, error: 'Nederīgs fileMetadata formāts.' });
+        }
+        
+        if (!validateFileMetadata(parsedFileMetadata)) {
             return res.status(400).json({ success: false, error: 'Nederīgs fileMetadata.' });
         }
         
-        if (!sameMetadata(fileMetadata, job.changedFiles)) {
+        if (!sameMetadata(parsedFileMetadata, job.changedFiles)) {
             return res.status(400).json({ success: false, error: 'Failu metadata neatbilst prepare backup rezultātam.' });
         }
         
@@ -890,7 +910,7 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                     updatedAt: Date.now()
                 });
                 
-                return res.json({ success: true, step: 'zip_uploaded', zipTxId: zipResult.id, iv });
+                return res.json({ success: true, step: 'zip_uploaded', zipTxId: zipResult.id, iv: parsedIV });
             } catch (uploadError) {
                 if (creditsReserved) {
                     await refundUserCredits(wallet, fileWinc);
@@ -1002,19 +1022,34 @@ app.post('/api/finalize-manifest', backupLimiter, async (req, res) => {
             return res.status(400).json({ success: false, error: 'ZIP ID neatbilst backup jobam.' });
         }
         
-        if (!Array.isArray(iv) || iv.length !== 12) {
+        const parsedIV = parseIVFromFormData(iv);
+        if (!parsedIV) {
             return res.status(400).json({ success: false, error: 'Nederīgs AES-GCM IV.' });
         }
         
-        if (!validateFileMetadata(fileMetadata)) {
+        let parsedFileMetadata;
+        try {
+            parsedFileMetadata = typeof fileMetadata === 'string' ? JSON.parse(fileMetadata) : fileMetadata;
+        } catch {
+            return res.status(400).json({ success: false, error: 'Nederīgs fileMetadata formāts.' });
+        }
+        
+        if (!validateFileMetadata(parsedFileMetadata)) {
             return res.status(400).json({ success: false, error: 'Nederīgs fileMetadata.' });
         }
         
-        if (!sameMetadata(fileMetadata, job.changedFiles)) {
+        if (!sameMetadata(parsedFileMetadata, job.changedFiles)) {
             return res.status(400).json({ success: false, error: 'fileMetadata neatbilst jobam.' });
         }
         
-        if (JSON.stringify(unchangedFiles || {}) !== JSON.stringify(job.unchangedFiles || {})) {
+        let parsedUnchangedFiles;
+        try {
+            parsedUnchangedFiles = typeof unchangedFiles === 'string' ? JSON.parse(unchangedFiles) : unchangedFiles;
+        } catch {
+            return res.status(400).json({ success: false, error: 'Nederīgs unchangedFiles formāts.' });
+        }
+        
+        if (JSON.stringify(parsedUnchangedFiles || {}) !== JSON.stringify(job.unchangedFiles || {})) {
             return res.status(400).json({ success: false, error: 'unchangedFiles neatbilst jobam.' });
         }
         
@@ -1034,7 +1069,7 @@ app.post('/api/finalize-manifest', backupLimiter, async (req, res) => {
             const currentJob = await getJob(jobId);
             
             if (!currentJob.manifestPrepared) {
-                const mutableJob = { ...currentJob, currentIV: iv };
+                const mutableJob = { ...currentJob, currentIV: parsedIV };
                 const manifest = buildManifest(mutableJob);
                 const manifestBuffer = Buffer.from(JSON.stringify(manifest), 'utf8');
                 const manifestSize = manifestBuffer.length;
@@ -1050,7 +1085,7 @@ app.post('/api/finalize-manifest', backupLimiter, async (req, res) => {
                     manifestWinc: manifestWinc.toString(),
                     fullManifestCostEth: manifestCostEth,
                     manifestCostEth: useCredits ? '0' : manifestCostEth,
-                    currentIV: iv,
+                    currentIV: parsedIV,
                     creditsReservedForManifest: false,
                     updatedAt: Date.now()
                 };
