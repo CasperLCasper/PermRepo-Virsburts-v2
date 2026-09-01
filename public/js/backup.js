@@ -92,7 +92,6 @@ const translations = {
         'zip-uploaded': '✅ ZIP augšupielādēts!',
         'manifest-ready': 'Manifests gatavs'
     },
-
     en: {
         'backup-title': '📦 PermRepo Backups',
         'repo-label': 'Repository',
@@ -135,7 +134,6 @@ const translations = {
         'zip-uploaded': '✅ ZIP uploaded!',
         'manifest-ready': 'Manifest ready'
     },
-
     eo: {
         'backup-title': '📦 PermRepo Sekurkopioj',
         'repo-label': 'Deponejo',
@@ -186,26 +184,17 @@ function t(key) {
 
 function switchLanguage(lang) {
     if (!translations[lang]) return;
-
     currentLanguage = lang;
     localStorage.setItem('permrepo-language', lang);
-
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.lang === lang);
     });
-
     applyTranslations();
-
     if (repoName) {
         const title = document.getElementById('repoTitle');
-        if (title) {
-            title.textContent = `${t('repo-label')}: ${repoName}`;
-        }
+        if (title) title.textContent = `${t('repo-label')}: ${repoName}`;
     }
-
-    if (tokenId) {
-        loadNFTInfo();
-    }
+    if (tokenId) loadNFTInfo();
 }
 
 function applyTranslations() {
@@ -216,36 +205,19 @@ function applyTranslations() {
 
 function formatFileSize(bytes) {
     const value = Number(bytes || 0);
-
-    if (value < 1024) {
-        return `${value} B`;
-    }
-
-    if (value < 1024 * 1024) {
-        return `${(value / 1024).toFixed(2)} KB`;
-    }
-
-    if (value < 1024 * 1024 * 1024) {
-        return `${(value / 1024 / 1024).toFixed(2)} MB`;
-    }
-
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(2)} KB`;
+    if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} MB`;
     return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 function isValidMasterKey(value) {
     try {
         if (typeof value !== 'string') return false;
-
         const normalized = value.trim();
-
-        if (!/^0x[0-9a-fA-F]{64}$/.test(normalized)) {
-            return false;
-        }
-
+        if (!/^0x[0-9a-fA-F]{64}$/.test(normalized)) return false;
         return ethers.getBytes(normalized).length === 32;
-    } catch {
-        return false;
-    }
+    } catch { return false; }
 }
 
 function normalizeWallet(address) {
@@ -253,438 +225,211 @@ function normalizeWallet(address) {
 }
 
 function isUserRejected(error) {
-    return (
-        error?.code === 4001 ||
-        error?.code === 'ACTION_REJECTED' ||
-        error?.info?.error?.code === 4001
-    );
+    return error?.code === 4001 || error?.code === 'ACTION_REJECTED' || error?.info?.error?.code === 4001;
 }
 
 async function apiJson(url, options = {}) {
-    const response = await fetch(url, {
-        credentials: 'same-origin',
-        ...options
-    });
-
+    const response = await fetch(url, { credentials: 'same-origin', ...options });
     let result;
-
-    try {
-        result = await response.json();
-    } catch {
-        throw new Error(`Servera kļūda: HTTP ${response.status}`);
-    }
-
-    if (!response.ok && !result.success) {
-        throw new Error(result.error || `HTTP ${response.status}`);
-    }
-
+    try { result = await response.json(); } catch { throw new Error(`Servera kļūda: HTTP ${response.status}`); }
+    if (!response.ok && !result.success) throw new Error(result.error || `HTTP ${response.status}`);
     return result;
 }
 
 async function init() {
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
-
         btn.onclick = () => switchLanguage(btn.dataset.lang);
     });
-
     applyTranslations();
-
-    try {
-        CONFIG = await apiJson('/api/config');
-    } catch (error) {
-        showError(error.message);
-        return;
-    }
-
+    
+    try { CONFIG = await apiJson('/api/config'); } catch (error) { showError(error.message); return; }
+    
     const params = new URLSearchParams(window.location.search);
     repoName = params.get('repo');
-
-    if (!repoName) {
-        showError('Nav repo nosaukuma URL parametrā!');
-        return;
-    }
-
+    if (!repoName) { showError('Nav repo nosaukuma URL parametrā!'); return; }
+    
     const repoTitle = document.getElementById('repoTitle');
-
-    if (repoTitle) {
-        repoTitle.textContent = `${t('repo-label')}: ${repoName}`;
-    }
-
+    if (repoTitle) repoTitle.textContent = `${t('repo-label')}: ${repoName}`;
+    
     try {
         const userData = await apiJson('/api/github/user');
-
-        if (!userData.success) {
-            window.location.href = '/api/github/login';
-            return;
-        }
-
+        if (!userData.success) { window.location.href = '/api/github/login'; return; }
         githubUser = userData.user;
-    } catch (error) {
-        showError(error.message);
-        return;
-    }
-
-    if (!window.ethereum) {
-        showError('Lūdzu instalē maku!');
-        return;
-    }
-
+    } catch (error) { showError(error.message); return; }
+    
+    if (!window.ethereum) { showError('Lūdzu instalē maku!'); return; }
+    
     try {
-        await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: CONFIG.chainId }]
-        });
-
+        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CONFIG.chainId }] });
         const provider = new ethers.BrowserProvider(window.ethereum);
-
         signer = await provider.getSigner();
         userAddress = normalizeWallet(await signer.getAddress());
-
         await loadNFTInfo();
-    } catch (error) {
-        showError(error.message);
-    }
-
+    } catch (error) { showError(error.message); }
+    
     if (window.ethereum) {
         window.ethereum.on?.('accountsChanged', async accounts => {
-            if (!accounts || accounts.length === 0) {
-                userAddress = null;
-                showError('Maks nav savienots.');
-                return;
-            }
-
+            if (!accounts || accounts.length === 0) { userAddress = null; showError('Maks nav savienots.'); return; }
             try {
                 userAddress = normalizeWallet(accounts[0]);
-
-                if (currentJobId) {
-                    resetBackupState();
-                }
-
+                if (currentJobId) resetBackupState();
                 await loadNFTInfo();
-            } catch (error) {
-                showError(error.message);
-            }
+            } catch (error) { showError(error.message); }
         });
-
-        window.ethereum.on?.('chainChanged', () => {
-            window.location.reload();
-        });
+        window.ethereum.on?.('chainChanged', () => { window.location.reload(); });
     }
 }
 
 async function loadNFTInfo() {
     try {
-        if (!githubUser || !repoName || !userAddress) {
-            return;
-        }
-
+        if (!githubUser || !repoName || !userAddress) return;
         const provider = new ethers.BrowserProvider(window.ethereum);
-
-        const nftContract = new ethers.Contract(
-            CONFIG.nftAddress,
-            NFT_ABI,
-            provider
-        );
-
+        const nftContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
         const fullRepoName = `${githubUser}/${repoName}`;
-
-        const repoHash = ethers.keccak256(
-            ethers.AbiCoder.defaultAbiCoder().encode(
-                ['string'],
-                [fullRepoName]
-            )
-        );
-
+        const repoHash = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(['string'], [fullRepoName]));
         tokenId = await nftContract.repositoryTokens(repoHash);
-
-        if (tokenId === 0n) {
-            showError('Nav NFT šim repo!');
-            return;
-        }
-
+        if (tokenId === 0n) { showError('Nav NFT šim repo!'); return; }
         const nftOwner = await nftContract.ownerOf(tokenId);
-
-        if (nftOwner.toLowerCase() !== userAddress.toLowerCase()) {
-            showError('NFT nepieder šim makam!');
-            return;
-        }
-
+        if (nftOwner.toLowerCase() !== userAddress.toLowerCase()) { showError('NFT nepieder šim makam!'); return; }
+        
         const tokenElement = document.getElementById('nftTokenId');
         const backupElement = document.getElementById('backupCount');
         const manifestElement = document.getElementById('lastManifest');
         const merkleElement = document.getElementById('lastMerkleRoot');
-
-        if (tokenElement) {
-            tokenElement.textContent = tokenId.toString();
-        }
-
+        if (tokenElement) tokenElement.textContent = tokenId.toString();
         const backupCount = await nftContract.getBackupCount(tokenId);
-
-        if (backupElement) {
-            backupElement.textContent = backupCount.toString();
-        }
-
+        if (backupElement) backupElement.textContent = backupCount.toString();
         const lastManifest = await nftContract.getManifestURI(tokenId);
-
-        if (manifestElement) {
-            manifestElement.textContent = lastManifest || 'Nav';
-        }
-
+        if (manifestElement) manifestElement.textContent = lastManifest || 'Nav';
         const lastMerkleRoot = await nftContract.getLastMerkleRoot(tokenId);
-
-        if (merkleElement) {
-            merkleElement.textContent = lastMerkleRoot || 'Nav';
-        }
-
+        if (merkleElement) merkleElement.textContent = lastMerkleRoot || 'Nav';
+        
         const button = document.getElementById('startBackupButton');
-
         if (button) {
             button.style.display = 'block';
             button.disabled = false;
             button.textContent = t('start-backup');
             button.onclick = prepareBackup;
         }
-    } catch (error) {
-        showError(error.message);
-    }
+    } catch (error) { showError(error.message); }
 }
 
 async function generateMasterKey() {
     const keyBytes = crypto.getRandomValues(new Uint8Array(32));
-
     return ethers.hexlify(keyBytes);
 }
 
 function showMasterKey(keyToShow) {
     return new Promise(resolve => {
         const modal = document.createElement('div');
-
-        modal.style.cssText = `
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            padding: 20px;
-        `;
-
+        modal.style.cssText = `position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 20px;`;
         const box = document.createElement('div');
-
-        box.style.cssText = `
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            padding: 32px;
-            max-width: 480px;
-            width: 100%;
-            box-sizing: border-box;
-        `;
-
+        box.style.cssText = `background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px; max-width: 480px; width: 100%; box-sizing: border-box;`;
         const title = document.createElement('h2');
         title.textContent = t('key-title');
         title.style.cssText = 'color:#79c0ff;margin-bottom:16px;';
-
         const description = document.createElement('p');
         description.textContent = t('key-description');
         description.style.cssText = 'color:#b0b8c4;margin-bottom:16px;';
-
         const keyBox = document.createElement('div');
         keyBox.textContent = keyToShow;
-        keyBox.style.cssText = `
-            background:#0d1117;
-            border:1px solid #30363d;
-            border-radius:8px;
-            padding:16px;
-            margin-bottom:16px;
-            word-break:break-all;
-            font-family:monospace;
-            color:#e6edf3;
-        `;
-
+        keyBox.style.cssText = `background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:16px; margin-bottom:16px; word-break:break-all; font-family:monospace; color:#e6edf3;`;
         const copyButton = document.createElement('button');
         copyButton.textContent = t('copy-key');
-        copyButton.style.cssText = `
-            width:100%;
-            padding:12px;
-            background:#238636;
-            color:#fff;
-            border:none;
-            border-radius:8px;
-            font-size:16px;
-            cursor:pointer;
-            margin-bottom:8px;
-        `;
-
+        copyButton.style.cssText = `width:100%; padding:12px; background:#238636; color:#fff; border:none; border-radius:8px; font-size:16px; cursor:pointer; margin-bottom:8px;`;
         const downloadButton = document.createElement('button');
         downloadButton.textContent = t('download-key');
-        downloadButton.style.cssText = `
-            width:100%;
-            padding:12px;
-            background:#21262d;
-            color:#fff;
-            border:none;
-            border-radius:8px;
-            font-size:16px;
-            cursor:pointer;
-            margin-bottom:8px;
-        `;
-
+        downloadButton.style.cssText = `width:100%; padding:12px; background:#21262d; color:#fff; border:none; border-radius:8px; font-size:16px; cursor:pointer; margin-bottom:8px;`;
         const closeButton = document.createElement('button');
         closeButton.textContent = t('saving-key');
-        closeButton.style.cssText = `
-            width:100%;
-            padding:12px;
-            background:#f85149;
-            color:#fff;
-            border:none;
-            border-radius:8px;
-            font-size:16px;
-            cursor:pointer;
-        `;
-
+        closeButton.style.cssText = `width:100%; padding:12px; background:#f85149; color:#fff; border:none; border-radius:8px; font-size:16px; cursor:pointer;`;
         box.appendChild(title);
         box.appendChild(description);
         box.appendChild(keyBox);
         box.appendChild(copyButton);
         box.appendChild(downloadButton);
         box.appendChild(closeButton);
-
         modal.appendChild(box);
         document.body.appendChild(modal);
-
-        copyButton.onclick = async () => {
-            try {
-                await navigator.clipboard.writeText(keyToShow);
-                copyButton.textContent = '✅';
-            } catch {
-                copyButton.textContent = '❌';
-            }
-        };
-
+        copyButton.onclick = async () => { try { await navigator.clipboard.writeText(keyToShow); copyButton.textContent = '✅'; } catch { copyButton.textContent = '❌'; } };
         downloadButton.onclick = () => {
-            const blob = new Blob(
-                [keyToShow],
-                { type: 'text/plain;charset=utf-8' }
-            );
-
+            const blob = new Blob([keyToShow], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const anchor = document.createElement('a');
-
             anchor.href = url;
-            anchor.download =
-                `permrepo-master-key-${repoName.replace(/[^\w.-]/g, '_')}.txt`;
-
+            anchor.download = `permrepo-master-key-${repoName.replace(/[^\w.-]/g, '_')}.txt`;
             document.body.appendChild(anchor);
             anchor.click();
             anchor.remove();
-
             URL.revokeObjectURL(url);
         };
-
-        closeButton.onclick = () => {
-            modal.remove();
-            resolve();
-        };
+        closeButton.onclick = () => { modal.remove(); resolve(); };
     });
 }
 
 function resetBackupState() {
     currentJobId = null;
-
     currentFileCostEth = '0';
     currentManifestCostEth = '0';
-
     currentUnchangedFiles = {};
     currentPreviousHistory = [];
     currentPreviousManifestId = null;
     currentPreviousBackupNumber = null;
     currentPreviousEncryptionIVs = {};
-
     currentFiles = [];
     currentFileMetadata = [];
-
     currentMerkleRoot = null;
     currentIV = null;
     currentZipTxId = null;
-
     currentManifestPayload = null;
-
     hasDepositedFiles = false;
     hasDepositedManifest = false;
-
     masterKey = null;
 }
 
 async function prepareBackup() {
     const button = document.getElementById('startBackupButton');
-
     if (!button) return;
-
     button.disabled = true;
     button.textContent = `⏳ ${t('preparing')}`;
-
     setStatus(t('preparing'));
     clearError();
-
     try {
         resetBackupState();
-
         const result = await apiJson('/api/prepare-backup', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                repoName,
-                walletAddress: userAddress
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repoName, walletAddress: userAddress })
         });
-
         currentJobId = result.jobId;
-
         currentUnchangedFiles = result.unchangedFiles || {};
         currentFiles = result.files || [];
-
         currentFileCostEth = result.fileCostEth || '0';
-
         currentPreviousHistory = result.previousHistory || [];
         currentPreviousManifestId = result.previousManifestId || null;
-        currentPreviousBackupNumber =
-            result.previousBackupNumber ?? null;
-
-        currentPreviousEncryptionIVs =
-            result.previousEncryptionIVs || {};
-
+        currentPreviousBackupNumber = result.previousBackupNumber ?? null;
+        currentPreviousEncryptionIVs = result.previousEncryptionIVs || {};
         if (currentFiles.length === 0) {
             setStatus(t('no-changes'));
-
             button.disabled = false;
             button.textContent = t('start-backup');
             button.onclick = prepareBackup;
-
             return;
         }
-
         const totalBytes = result.totalBytes || 0;
-
         const sizeText = formatFileSize(totalBytes);
-
         setStatus(
             `${t('files-count')}: ${currentFiles.length}\n` +
             `${t('files-size')}: ${sizeText}\n` +
             `${t('file-cost')}: ${currentFileCostEth} Base ETH\n` +
             `${t('manifest-cost')}: ${t('preparing')}`
         );
-
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
         button.onclick = executeZipUpload;
     } catch (error) {
         showError(error.message);
-
         button.disabled = false;
         button.textContent = t('start-backup');
         button.onclick = prepareBackup;
@@ -693,411 +438,213 @@ async function prepareBackup() {
 
 async function executeZipUpload() {
     const button = document.getElementById('startBackupButton');
-
-    if (!button || !currentJobId) {
-        showError('Backup sesija nav atrasta.');
-        return;
-    }
-
+    if (!button || !currentJobId) { showError('Backup sesija nav atrasta.'); return; }
     button.disabled = true;
-
     try {
         const files = currentFiles;
-
         const backupCount = await getBackupCountFromChain();
-
         if (backupCount === 0) {
             setStatus(t('generate-key'));
             button.textContent = '⏳';
-
             masterKey = await generateMasterKey();
-
             await showMasterKey(masterKey);
         } else {
             const enteredKey = prompt(t('enter-key'));
-
-            if (enteredKey) {
-                masterKey = enteredKey.trim();
-            } else {
-                masterKey = null;
-            }
+            masterKey = enteredKey ? enteredKey.trim() : null;
         }
-
         if (!isValidMasterKey(masterKey)) {
             masterKey = null;
-
             showError(t('encrypted-required'));
-
             button.disabled = false;
             button.textContent = t('deposit-and-upload');
             button.onclick = executeZipUpload;
-
             return;
         }
-
+        
         setStatus(t('creating-zip'));
-
         const zip = new JSZip();
-
         for (const file of files) {
-            if (
-                !file ||
-                typeof file.path !== 'string' ||
-                typeof file.content !== 'string'
-            ) {
-                throw new Error('Nederīgs faila objekts.');
-            }
-
+            if (!file || typeof file.path !== 'string' || typeof file.content !== 'string') throw new Error('Nederīgs faila objekts.');
             const binaryString = atob(file.content);
             const fileBuffer = new Uint8Array(binaryString.length);
-
-            for (let i = 0; i < binaryString.length; i++) {
-                fileBuffer[i] = binaryString.charCodeAt(i);
-            }
-
+            for (let i = 0; i < binaryString.length; i++) fileBuffer[i] = binaryString.charCodeAt(i);
             zip.file(file.path, fileBuffer);
         }
-
-        const zipBuffer = await zip.generateAsync({
-            type: 'uint8array'
-        });
-
+        const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
+        
         setStatus(t('encrypting'));
-
         const encrypted = await encryptData(zipBuffer, masterKey);
-
         const encryptedZipData = encrypted.encrypted;
         currentIV = encrypted.iv;
-
         currentMerkleRoot = calculateMerkleRoot(files);
-
-        currentFileMetadata = files.map(file => ({
-            path: file.path,
-            hash: file.hash
-        }));
-
+        currentFileMetadata = files.map(file => ({ path: file.path, hash: file.hash }));
+        
         let filePaymentTxHash = null;
-
-        const initialCostWei =
-            ethers.parseEther(currentFileCostEth || '0');
-
-        /*
-         * Ja prepare laikā serveris konstatēja, ka ir nepieciešams
-         * maksājums, lietotājs samaksā tieši servera aprēķināto summu.
-         *
-         * Serveris pēc tam pārbauda šo tx on-chain.
-         */
+        const initialCostWei = ethers.parseEther(currentFileCostEth || '0');
+        
         if (initialCostWei > 0n && !hasDepositedFiles) {
-            setStatus(
-                `${t('deposit-files')}: ${currentFileCostEth} Base ETH...`
-            );
-
+            setStatus(`${t('deposit-files')}: ${currentFileCostEth} Base ETH...`);
             button.textContent = '⏳';
-
-            const tx = await signer.sendTransaction({
-                to: CONFIG.treasuryAddress,
-                value: initialCostWei
-            });
-
+            const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: initialCostWei });
             setStatus(t('waiting'));
-
             await tx.wait();
-
             filePaymentTxHash = tx.hash;
-
             setStatus(t('success'));
-
             hasDepositedFiles = true;
         }
-
+        
         setStatus(t('uploading'));
-
-        const executeResult = await apiJson('/api/execute-backup', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                jobId: currentJobId,
-                encryptedZip: Array.from(encryptedZipData),
-                iv: Array.from(currentIV),
-                fileMetadata: currentFileMetadata,
-                paymentTxHash: filePaymentTxHash
-            })
+        
+        // BINARY UPLOAD — izmanto FormData ar Blob
+        const executeResult = await uploadZipBinary({
+            jobId: currentJobId,
+            encryptedZip: encryptedZipData,
+            iv: currentIV,
+            fileMetadata: currentFileMetadata,
+            paymentTxHash: filePaymentTxHash
         });
-
-        /*
-         * Gadījumā, ja Redis bilance bija izmainījusies pēc prepare,
-         * serveris var prasīt payment pat tad, ja prepare sākumā
-         * uzrādīja 0 ETH.
-         */
+        
         if (executeResult.paymentRequired) {
-            currentFileCostEth =
-                executeResult.requiredPaymentEth || '0';
-
-            const requiredWei =
-                ethers.parseEther(currentFileCostEth);
-
-            if (requiredWei <= 0n) {
-                throw new Error('Serveris pieprasīja maksājumu ar nulles summu.');
-            }
-
-            setStatus(
-                `${t('deposit-files')}: ${currentFileCostEth} Base ETH...`
-            );
-
-            const tx = await signer.sendTransaction({
-                to: CONFIG.treasuryAddress,
-                value: requiredWei
-            });
-
+            currentFileCostEth = executeResult.requiredPaymentEth || '0';
+            const requiredWei = ethers.parseEther(currentFileCostEth);
+            if (requiredWei <= 0n) throw new Error('Serveris pieprasīja maksājumu ar nulles summu.');
+            setStatus(`${t('deposit-files')}: ${currentFileCostEth} Base ETH...`);
+            const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: requiredWei });
             setStatus(t('waiting'));
-
             await tx.wait();
-
             hasDepositedFiles = true;
-
-            const retryResult = await apiJson('/api/execute-backup', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    jobId: currentJobId,
-                    encryptedZip: Array.from(encryptedZipData),
-                    iv: Array.from(currentIV),
-                    fileMetadata: currentFileMetadata,
-                    paymentTxHash: tx.hash
-                })
+            
+            const retryResult = await uploadZipBinary({
+                jobId: currentJobId,
+                encryptedZip: encryptedZipData,
+                iv: currentIV,
+                fileMetadata: currentFileMetadata,
+                paymentTxHash: tx.hash
             });
-
-            if (!retryResult.success) {
-                throw new Error(
-                    retryResult.error || 'ZIP augšupielāde neizdevās.'
-                );
-            }
-
+            if (!retryResult.success) throw new Error(retryResult.error || 'ZIP augšupielāde neizdevās.');
             currentZipTxId = retryResult.zipTxId;
         } else {
             currentZipTxId = executeResult.zipTxId;
         }
-
-        document.getElementById('status').textContent =
-            `${t('zip-uploaded')}\n\n${t('manifest-cost')}: ${t('preparing')}`;
-
+        
+        document.getElementById('status').textContent = `${t('zip-uploaded')}\n\n${t('manifest-cost')}: ${t('preparing')}`;
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
         button.onclick = () => finalizeManifest(currentZipTxId, button);
     } catch (error) {
         masterKey = null;
-
-        if (isUserRejected(error)) {
-            showError(t('transaction-cancelled'));
-        } else {
-            showError(error.message);
-        }
-
+        if (isUserRejected(error)) showError(t('transaction-cancelled'));
+        else showError(error.message);
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
         button.onclick = executeZipUpload;
     }
 }
 
-async function requestManifestPreparation(zipTxId) {
-    return apiJson('/api/finalize-manifest', {
+async function uploadZipBinary({ jobId, encryptedZip, iv, fileMetadata, paymentTxHash }) {
+    const formData = new FormData();
+    formData.append('jobId', jobId);
+    formData.append('iv', JSON.stringify(Array.from(iv)));
+    formData.append('fileMetadata', JSON.stringify(fileMetadata));
+    if (paymentTxHash) formData.append('paymentTxHash', paymentTxHash);
+    formData.append('file', new Blob([encryptedZip], { type: 'application/octet-stream' }), 'encrypted.zip');
+    
+    const response = await fetch('/api/execute-backup', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            jobId: currentJobId,
-            zipTxId,
-            fileMetadata: currentFileMetadata,
-            unchangedFiles: currentUnchangedFiles,
-            iv: Array.from(currentIV)
-        })
+        credentials: 'same-origin',
+        body: formData
     });
+    
+    let result;
+    try { result = await response.json(); } catch { throw new Error(`Servera kļūda: HTTP ${response.status}`); }
+    if (!response.ok && !result.success && !result.paymentRequired) throw new Error(result.error || `HTTP ${response.status}`);
+    return result;
 }
 
 async function finalizeManifest(zipTxId, button) {
-    if (!currentJobId || !zipTxId) {
-        showError('Trūkst backup darba vai ZIP ID.');
-        return;
-    }
-
+    if (!currentJobId || !zipTxId) { showError('Trūkst backup darba vai ZIP ID.'); return; }
     button.disabled = true;
-
     try {
         setStatus(t('uploading'));
-
-        /*
-         * Pirmais izsaukums NEIZVEIDO maksājumu un NEIZTĒRĒ Turbo.
-         * Serveris izveido deterministisku manifestu, aprēķina tā
-         * faktisko izmēru/cenu un atgriež nepieciešamo summu.
-         */
-        let manifestResult = await requestManifestPreparation(zipTxId);
-
+        let manifestResult = await apiJson('/api/finalize-manifest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jobId: currentJobId,
+                zipTxId,
+                fileMetadata: currentFileMetadata,
+                unchangedFiles: currentUnchangedFiles,
+                iv: Array.from(currentIV)
+            })
+        });
+        
         if (manifestResult.paymentRequired) {
             currentManifestPayload = manifestResult.manifest;
-            currentManifestCostEth =
-                manifestResult.requiredPaymentEth || '0';
-
-            const manifestSize = JSON.stringify(
-                manifestResult.manifest
-            ).length;
-
+            currentManifestCostEth = manifestResult.requiredPaymentEth || '0';
+            const manifestSize = JSON.stringify(manifestResult.manifest).length;
             document.getElementById('status').textContent =
                 `${t('manifest-ready')}\n\n` +
                 `${t('manifest-size')}: ${formatFileSize(manifestSize)}\n` +
                 `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
-
-            const manifestCostWei =
-                ethers.parseEther(currentManifestCostEth);
-
-            if (manifestCostWei <= 0n) {
-                throw new Error(
-                    'Serveris pieprasīja manifesta maksājumu ar nulles summu.'
-                );
-            }
-
+            
+            const manifestCostWei = ethers.parseEther(currentManifestCostEth);
+            if (manifestCostWei <= 0n) throw new Error('Serveris pieprasīja manifesta maksājumu ar nulles summu.');
+            
             if (!hasDepositedManifest) {
-                setStatus(
-                    `${t('deposit-manifest')}: ${currentManifestCostEth} Base ETH...`
-                );
-
+                setStatus(`${t('deposit-manifest')}: ${currentManifestCostEth} Base ETH...`);
                 button.textContent = '⏳';
-
-                const tx = await signer.sendTransaction({
-                    to: CONFIG.treasuryAddress,
-                    value: manifestCostWei
-                });
-
+                const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: manifestCostWei });
                 setStatus(t('waiting'));
-
                 await tx.wait();
-
                 hasDepositedManifest = true;
-
-                /*
-                 * Otrais izsaukums nosūta payment tx hash.
-                 * Serveris to pārbauda on-chain un tikai tad
-                 * izpilda Turbo upload.
-                 */
-                manifestResult = await apiJson(
-                    '/api/finalize-manifest',
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            jobId: currentJobId,
-                            zipTxId,
-                            fileMetadata: currentFileMetadata,
-                            unchangedFiles: currentUnchangedFiles,
-                            iv: Array.from(currentIV),
-                            paymentTxHash: tx.hash
-                        })
-                    }
-                );
+                
+                manifestResult = await apiJson('/api/finalize-manifest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jobId: currentJobId,
+                        zipTxId,
+                        fileMetadata: currentFileMetadata,
+                        unchangedFiles: currentUnchangedFiles,
+                        iv: Array.from(currentIV),
+                        paymentTxHash: tx.hash
+                    })
+                });
             }
         }
-
-        if (!manifestResult.success) {
-            throw new Error(
-                manifestResult.error || 'Manifesta kļūda.'
-            );
-        }
-
-        currentManifestCostEth =
-            manifestResult.manifestCostEth || '0';
-
-        currentManifestPayload =
-            manifestResult.manifest || currentManifestPayload;
-
-        const manifestSize =
-            JSON.stringify(currentManifestPayload || {}).length;
-
+        
+        if (!manifestResult.success) throw new Error(manifestResult.error || 'Manifesta kļūda.');
+        currentManifestCostEth = manifestResult.manifestCostEth || '0';
+        currentManifestPayload = manifestResult.manifest || currentManifestPayload;
+        const manifestSize = JSON.stringify(currentManifestPayload || {}).length;
         document.getElementById('status').textContent =
             `${t('manifest-ready')}\n\n` +
             `${t('manifest-size')}: ${formatFileSize(manifestSize)}\n` +
             `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
-
-        /*
-         * Ja serveris uzreiz augšupielādēja bezmaksas manifestu,
-         * manifestTxId jau ir pieejams.
-         */
+        
         const manifestTxId = manifestResult.manifestTxId;
-
-        if (!manifestTxId) {
-            throw new Error('Serveris neatgrieza manifestTxId.');
-        }
-
+        if (!manifestTxId) throw new Error('Serveris neatgrieza manifestTxId.');
+        
         setStatus(t('signing'));
-
-        const provider = new ethers.BrowserProvider(
-            window.ethereum
-        );
-
-        const readContract = new ethers.Contract(
-            CONFIG.nftAddress,
-            NFT_ABI,
-            provider
-        );
-
-        const deadline =
-            Math.floor(Date.now() / 1000) + 600;
-
-        const currentNonce =
-            await readContract.getNonce(tokenId);
-
-        const onChainBackupCount =
-            await readContract.getBackupCount(tokenId);
-
-        const manifestURI =
-            `ar://${manifestTxId}`;
-
-        const manifestHash =
-            ethers.keccak256(
-                ethers.toUtf8Bytes(manifestURI)
-            );
-
-        const domain = {
-            name: 'PermRepo',
-            version: '1',
-            chainId: Number(CONFIG.chainId),
-            verifyingContract: CONFIG.nftAddress
-        };
-
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const readContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
+        const deadline = Math.floor(Date.now() / 1000) + 600;
+        const currentNonce = await readContract.getNonce(tokenId);
+        const onChainBackupCount = await readContract.getBackupCount(tokenId);
+        const manifestURI = `ar://${manifestTxId}`;
+        const manifestHash = ethers.keccak256(ethers.toUtf8Bytes(manifestURI));
+        
+        const domain = { name: 'PermRepo', version: '1', chainId: Number(CONFIG.chainId), verifyingContract: CONFIG.nftAddress };
         const types = {
             AddBackup: [
-                {
-                    name: 'tokenId',
-                    type: 'uint256'
-                },
-                {
-                    name: 'backupNumber',
-                    type: 'uint256'
-                },
-                {
-                    name: 'manifestHash',
-                    type: 'bytes32'
-                },
-                {
-                    name: 'merkleRoot',
-                    type: 'bytes32'
-                },
-                {
-                    name: 'deadline',
-                    type: 'uint256'
-                },
-                {
-                    name: 'nonce',
-                    type: 'uint256'
-                }
+                { name: 'tokenId', type: 'uint256' },
+                { name: 'backupNumber', type: 'uint256' },
+                { name: 'manifestHash', type: 'bytes32' },
+                { name: 'merkleRoot', type: 'bytes32' },
+                { name: 'deadline', type: 'uint256' },
+                { name: 'nonce', type: 'uint256' }
             ]
         };
-
         const value = {
             tokenId: BigInt(tokenId),
             backupNumber: onChainBackupCount + 1n,
@@ -1106,92 +653,51 @@ async function finalizeManifest(zipTxId, button) {
             deadline: BigInt(deadline),
             nonce: currentNonce
         };
-
-        const signature =
-            await signer.signTypedData(
-                domain,
-                types,
-                value
-            );
-
-        const finalizeResult =
-            await apiJson('/api/finalize-backup', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    jobId: currentJobId,
-                    tokenId: tokenId.toString(),
-                    manifestTxId,
-                    fileMetadata: currentFileMetadata,
-                    deadline,
-                    signature
-                })
-            });
-
-        if (!finalizeResult.success) {
-            throw new Error(
-                finalizeResult.error ||
-                'Backup finalizācija neizdevās.'
-            );
-        }
-
+        
+        const signature = await signer.signTypedData(domain, types, value);
+        
+        const finalizeResult = await apiJson('/api/finalize-backup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jobId: currentJobId,
+                tokenId: tokenId.toString(),
+                manifestTxId,
+                fileMetadata: currentFileMetadata,
+                deadline,
+                signature
+            })
+        });
+        
+        if (!finalizeResult.success) throw new Error(finalizeResult.error || 'Backup finalizācija neizdevās.');
         masterKey = null;
-
         button.style.display = 'none';
-
-        const totalCostEth = (
-            Number.parseFloat(currentFileCostEth || '0') +
-            Number.parseFloat(currentManifestCostEth || '0')
-        ).toFixed(18);
-
-        const fileSizeText = formatFileSize(
-            currentFiles.reduce(
-                (sum, file) => sum + Number(file.size || 0),
-                0
-            )
-        );
-
+        
+        const totalCostEth = (Number.parseFloat(currentFileCostEth || '0') + Number.parseFloat(currentManifestCostEth || '0')).toFixed(18);
+        const fileSizeText = formatFileSize(currentFiles.reduce((sum, file) => sum + Number(file.size || 0), 0));
+        
         const status = document.getElementById('status');
-
         status.textContent = '';
-
         const successText = document.createElement('div');
         successText.textContent = t('backup-complete');
-
         const manifestText = document.createElement('div');
         manifestText.textContent = `${t('manifest-link')}: `;
-
         const manifestLink = document.createElement('a');
-        manifestLink.href =
-            `${CONFIG.arweaveGateway}/raw/${encodeURIComponent(manifestTxId)}`;
+        manifestLink.href = `${CONFIG.arweaveGateway}/raw/${encodeURIComponent(manifestTxId)}`;
         manifestLink.target = '_blank';
         manifestLink.rel = 'noopener noreferrer';
         manifestLink.textContent = `ar://${manifestTxId}`;
-
         manifestText.appendChild(manifestLink);
-
         const filesCount = document.createElement('div');
-        filesCount.textContent =
-            `${t('files-count')}: ${currentFiles.length}`;
-
+        filesCount.textContent = `${t('files-count')}: ${currentFiles.length}`;
         const filesSize = document.createElement('div');
-        filesSize.textContent =
-            `${t('files-size')}: ${fileSizeText}`;
-
+        filesSize.textContent = `${t('files-size')}: ${fileSizeText}`;
         const fileCost = document.createElement('div');
-        fileCost.textContent =
-            `${t('file-cost')}: ${currentFileCostEth} Base ETH`;
-
+        fileCost.textContent = `${t('file-cost')}: ${currentFileCostEth} Base ETH`;
         const manifestCost = document.createElement('div');
-        manifestCost.textContent =
-            `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
-
+        manifestCost.textContent = `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
         const totalCost = document.createElement('div');
-        totalCost.textContent =
-            `${t('total-cost')}: ${totalCostEth} Base ETH`;
-
+        totalCost.textContent = `${t('total-cost')}: ${totalCostEth} Base ETH`;
         status.appendChild(successText);
         status.appendChild(document.createElement('br'));
         status.appendChild(manifestText);
@@ -1203,13 +709,8 @@ async function finalizeManifest(zipTxId, button) {
         status.appendChild(totalCost);
     } catch (error) {
         masterKey = null;
-
-        if (isUserRejected(error)) {
-            showError(t('transaction-cancelled'));
-        } else {
-            showError(error.message);
-        }
-
+        if (isUserRejected(error)) showError(t('transaction-cancelled'));
+        else showError(error.message);
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
         button.onclick = () => finalizeManifest(zipTxId, button);
@@ -1217,109 +718,42 @@ async function finalizeManifest(zipTxId, button) {
 }
 
 async function getBackupCountFromChain() {
-    const provider =
-        new ethers.BrowserProvider(window.ethereum);
-
-    const nftContract =
-        new ethers.Contract(
-            CONFIG.nftAddress,
-            NFT_ABI,
-            provider
-        );
-
-    const count =
-        await nftContract.getBackupCount(tokenId);
-
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const nftContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
+    const count = await nftContract.getBackupCount(tokenId);
     return Number(count);
 }
 
 async function encryptData(data, keyHex) {
-    if (!isValidMasterKey(keyHex)) {
-        throw new Error('Invalid Master Key');
-    }
-
-    const keyBytes =
-        ethers.getBytes(keyHex);
-
-    const cryptoKey =
-        await crypto.subtle.importKey(
-            'raw',
-            keyBytes,
-            'AES-GCM',
-            false,
-            ['encrypt']
-        );
-
-    const iv =
-        crypto.getRandomValues(
-            new Uint8Array(12)
-        );
-
-    const encrypted =
-        await crypto.subtle.encrypt(
-            {
-                name: 'AES-GCM',
-                iv
-            },
-            cryptoKey,
-            data
-        );
-
-    return {
-        encrypted: new Uint8Array(encrypted),
-        iv
-    };
+    if (!isValidMasterKey(keyHex)) throw new Error('Invalid Master Key');
+    const keyBytes = ethers.getBytes(keyHex);
+    const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, data);
+    return { encrypted: new Uint8Array(encrypted), iv };
 }
 
 function calculateMerkleRoot(files) {
-    const fileHashes = files.map(file =>
-        ethers.keccak256(
-            ethers.toUtf8Bytes(
-                file.hash || ''
-            )
-        )
-    );
-
-    if (fileHashes.length === 0) {
-        return (
-            '0x0000000000000000000000000000000000000000000000000000000000000000'
-        );
-    }
-
-    return ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(
-            ['bytes32[]'],
-            [fileHashes]
-        )
-    );
+    const fileHashes = files.map(file => ethers.keccak256(ethers.toUtf8Bytes(file.hash || '')));
+    if (fileHashes.length === 0) return '0x0000000000000000000000000000000000000000000000000000000000000000';
+    return ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(['bytes32[]'], [fileHashes]));
 }
 
 function setStatus(message) {
-    const element =
-        document.getElementById('status');
-
+    const element = document.getElementById('status');
     if (!element) return;
-
-    element.textContent =
-        String(message ?? '');
+    element.textContent = String(message ?? '');
 }
 
 function showError(message) {
-    const element =
-        document.getElementById('error');
-
+    const element = document.getElementById('error');
     if (!element) return;
-
-    element.textContent =
-        String(message ?? 'Kļūda');
+    element.textContent = String(message ?? 'Kļūda');
 }
 
 function clearError() {
-    const element =
-        document.getElementById('error');
-
+    const element = document.getElementById('error');
     if (!element) return;
-
     element.textContent = '';
 }
 
