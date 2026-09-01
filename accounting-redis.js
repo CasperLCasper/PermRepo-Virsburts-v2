@@ -1,103 +1,753 @@
 // accounting-redis.js
-// Iekšējā grāmatvedība ar Upstash Redis – lietotāju kredītu un iemaksu uzskaite.
-// Internal accounting with Upstash Redis – user credits and deposits tracking.
+//
+// Iekšējā grāmatvedība ar Upstash Redis.
+//
+// Redis tiek izmantots:
+// 1. lietotāju Winc kredītu bilancēm;
+// 2. Treasury payment tx claim aizsardzībai;
+// 3. backup job stāvoklim;
+// 4. atomiskai kredītu rezervēšanai/atgriešanai.
+//
+// Svarīgi:
+// - Frontend NEKAD nav autoritatīvs kredītu bilancei.
+// - Frontend NEKAD nav autoritatīvs Turbo cenai.
+// - Kredītu debitēšana notiek Redis atomiskā Lua skriptā.
+// - Payment tx var tikt claimots tikai vienu reizi.
+// - Backup job ir servera pusē un tam ir TTL.
 
 import { Redis } from '@upstash/redis';
 
 let redis = null;
 
+const DEFAULT_JOB_TTL =
+    Number(
+        process.env.JOB_TTL_SECONDS ||
+        3600
+    );
+
+const PAYMENT_TTL =
+    Number(
+        process.env.PAYMENT_CLAIM_TTL_SECONDS ||
+        86400 * 30
+    );
+
+function normalizeWallet(walletAddress) {
+    if (
+        typeof walletAddress !==
+        'string'
+    ) {
+        throw new Error(
+            'Wallet address nav string.'
+        );
+    }
+
+    const normalized =
+        walletAddress
+            .trim()
+            .toLowerCase();
+
+    if (
+        !/^0x[0-9a-f]{40}$/.test(
+            normalized
+        )
+    ) {
+        throw new Error(
+            'Nederīga wallet address.'
+        );
+    }
+
+    return normalized;
+}
+
+function creditsKey(walletAddress) {
+    return (
+        `user:${normalizeWallet(
+            walletAddress
+        )}:winc`
+    );
+}
+
+function depositsKey(walletAddress) {
+    return (
+        `user:${normalizeWallet(
+            walletAddress
+        )}:deposits`
+    );
+}
+
+function jobKey(jobId) {
+    return `permrepo:job:${jobId}`;
+}
+
+function paymentKey(txHash) {
+    if (
+        typeof txHash !==
+            'string' ||
+        !/^0x[0-9a-fA-F]{64}$/.test(
+            txHash
+        )
+    ) {
+        throw new Error(
+            'Nederīgs payment tx hash.'
+        );
+    }
+
+    return (
+        `permrepo:payment:${txHash.toLowerCase()}`
+    );
+}
+
 /**
- * Inicializē Redis, ja vides mainīgie ir pieejami.
- * Initializes Redis if environment variables are available.
+ * Inicializē Redis.
  */
 export function initRedis() {
-    if (!redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-        redis = new Redis({
-            url: process.env.UPSTASH_REDIS_REST_URL,
-            token: process.env.UPSTASH_REDIS_REST_TOKEN,
-        });
-        console.log('✅ Redis inicializēts | Redis initialized');
-    } else {
-        console.log('⚠️ Redis nav konfigurēts | Redis is not configured');
+    if (
+        !redis &&
+        process.env.UPSTASH_REDIS_REST_URL &&
+        process.env.UPSTASH_REDIS_REST_TOKEN
+    ) {
+        redis =
+            new Redis({
+                url:
+                    process.env
+                        .UPSTASH_REDIS_REST_URL,
+
+                token:
+                    process.env
+                        .UPSTASH_REDIS_REST_TOKEN
+            });
+
+        console.log(
+            '✅ Redis inicializēts | Redis initialized'
+        );
+    } else if (!redis) {
+        console.log(
+            '⚠️ Redis nav konfigurēts | Redis is not configured'
+        );
     }
+
     return redis;
-}
-
-/**
- * Iegūst lietotāja kredītu bilanci.
- * Gets user credits balance.
- * @param {string} walletAddress - Lietotāja maka adrese | User wallet address.
- * @returns {Promise<bigint>} - Kredītu bilance | Credits balance.
- */
-export async function getUserCredits(walletAddress) {
-    if (!redis) return 0n;
-    
-    try {
-        const credits = await redis.get(`user:${walletAddress.toLowerCase()}:winc`);
-        return BigInt(String(credits || '0'));
-    } catch (e) {
-        console.warn('Redis get kļūda | Redis get error:', e.message);
-        return 0n;
-    }
-}
-
-/**
- * Atjaunina lietotāja kredītu bilanci.
- * Updates user credits balance.
- * @param {string} walletAddress - Lietotāja maka adrese | User wallet address.
- * @param {bigint} wincAmount - Kredītu summa winc | Credits amount in winc.
- */
-export async function setUserCredits(walletAddress, wincAmount) {
-    if (!redis) return;
-    
-    try {
-        await redis.set(`user:${walletAddress.toLowerCase()}:winc`, wincAmount.toString());
-        console.log('✅ Lietotāja kredīti atjaunināti | User credits updated:', wincAmount.toString());
-    } catch (e) {
-        console.warn('Redis set kļūda | Redis set error:', e.message);
-    }
-}
-
-/**
- * Iegūst lietotāja iemaksu bilanci.
- * Gets user deposits balance.
- * @param {string} walletAddress - Lietotāja maka adrese | User wallet address.
- * @returns {Promise<bigint>} - Iemaksu bilance | Deposits balance.
- */
-export async function getUserDeposits(walletAddress) {
-    if (!redis) return 0n;
-    
-    try {
-        const deposits = await redis.get(`user:${walletAddress.toLowerCase()}:deposits`);
-        return BigInt(String(deposits || '0'));
-    } catch (e) {
-        console.warn('Redis get kļūda | Redis get error:', e.message);
-        return 0n;
-    }
-}
-
-/**
- * Atjaunina lietotāja iemaksu bilanci.
- * Updates user deposits balance.
- * @param {string} walletAddress - Lietotāja maka adrese | User wallet address.
- * @param {bigint} depositAmount - Iemaksas summa wei | Deposit amount in wei.
- */
-export async function setUserDeposits(walletAddress, depositAmount) {
-    if (!redis) return;
-    
-    try {
-        await redis.set(`user:${walletAddress.toLowerCase()}:deposits`, depositAmount.toString());
-        console.log('✅ Lietotāja iemaksas atjauninātas | User deposits updated:', depositAmount.toString());
-    } catch (e) {
-        console.warn('Redis set kļūda | Redis set error:', e.message);
-    }
 }
 
 /**
  * Atgriež Redis klientu.
- * Returns the Redis client.
- * @returns {Redis|null} - Redis klients vai null | Redis client or null.
  */
 export function getRedis() {
     return redis;
+}
+
+/**
+ * Pārbauda, vai Redis ir pieejams.
+ */
+function requireRedis() {
+    if (!redis) {
+        throw new Error(
+            'Redis nav konfigurēts. PermRepo grāmatvedības operācija nav pieejama.'
+        );
+    }
+
+    return redis;
+}
+
+/**
+ * Droši pārvērš Redis vērtību BigInt.
+ */
+function parseBigInt(value) {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ''
+    ) {
+        return 0n;
+    }
+
+    try {
+        const parsed =
+            BigInt(String(value));
+
+        if (parsed < 0n) {
+            throw new Error(
+                'Negatīva Redis bilance.'
+            );
+        }
+
+        return parsed;
+    } catch {
+        throw new Error(
+            'Redis bilance satur nederīgu skaitli.'
+        );
+    }
+}
+
+/**
+ * Iegūst lietotāja Winc kredītu bilanci.
+ */
+export async function getUserCredits(
+    walletAddress
+) {
+    const client =
+        requireRedis();
+
+    const key =
+        creditsKey(walletAddress);
+
+    try {
+        const value =
+            await client.get(key);
+
+        return parseBigInt(value);
+    } catch (error) {
+        console.warn(
+            'Redis get kļūda | Redis get error:',
+            error.message
+        );
+
+        throw new Error(
+            'Redis kredītu nolasīšana neizdevās.'
+        );
+    }
+}
+
+/**
+ * Iestata lietotāja kredītu bilanci.
+ *
+ * Šo funkciju izmanto tikai:
+ * - administratīvai/iekšējai korekcijai;
+ * - migrācijai;
+ * - manuālai grāmatvedībai.
+ *
+ * Parastai debitēšanai izmanto reserveUserCredits().
+ */
+export async function setUserCredits(
+    walletAddress,
+    wincAmount
+) {
+    const client =
+        requireRedis();
+
+    const amount =
+        parseBigInt(
+            wincAmount
+        );
+
+    try {
+        await client.set(
+            creditsKey(
+                walletAddress
+            ),
+            amount.toString()
+        );
+
+        console.log(
+            '✅ Lietotāja kredīti atjaunināti | User credits updated:',
+            amount.toString()
+        );
+    } catch (error) {
+        console.warn(
+            'Redis set kļūda | Redis set error:',
+            error.message
+        );
+
+        throw new Error(
+            'Redis kredītu atjaunināšana neizdevās.'
+        );
+    }
+}
+
+/**
+ * Atomiski rezervē / atskaita Winc kredītus.
+ *
+ * Lua skripts nodrošina:
+ *
+ * if balance >= amount:
+ *     balance = balance - amount
+ *     return 1
+ *
+ * else:
+ *     return 0
+ *
+ * Tādējādi divi vienlaicīgi backup requesti
+ * nevar abus iztērēt vienu un to pašu bilanci.
+ */
+export async function reserveUserCredits(
+    walletAddress,
+    wincAmount
+) {
+    const client =
+        requireRedis();
+
+    const amount =
+        parseBigInt(
+            wincAmount
+        );
+
+    if (amount <= 0n) {
+        return true;
+    }
+
+    const key =
+        creditsKey(
+            walletAddress
+        );
+
+    const script = `
+        local current = redis.call(
+            "GET",
+            KEYS[1]
+        )
+
+        if not current then
+            current = "0"
+        end
+
+        local balance = tonumber(current)
+        local required = tonumber(ARGV[1])
+
+        if balance >= required then
+            redis.call(
+                "SET",
+                KEYS[1],
+                tostring(balance - required)
+            )
+
+            return 1
+        end
+
+        return 0
+    `;
+
+    try {
+        const result =
+            await client.eval(
+                script,
+                [key],
+                [amount.toString()]
+            );
+
+        return Number(result) === 1;
+    } catch (error) {
+        console.warn(
+            'Redis reserve kļūda | Redis reserve error:',
+            error.message
+        );
+
+        throw new Error(
+            'Redis kredītu rezervēšana neizdevās.'
+        );
+    }
+}
+
+/**
+ * Atomiski atgriež Winc kredītus.
+ *
+ * Izmanto tikai pēc neveiksmīga Turbo upload,
+ * ja kredīti tika rezervēti.
+ */
+export async function refundUserCredits(
+    walletAddress,
+    wincAmount
+) {
+    const client =
+        requireRedis();
+
+    const amount =
+        parseBigInt(
+            wincAmount
+        );
+
+    if (amount <= 0n) {
+        return;
+    }
+
+    const key =
+        creditsKey(
+            walletAddress
+        );
+
+    const script = `
+        local current = redis.call(
+            "GET",
+            KEYS[1]
+        )
+
+        if not current then
+            current = "0"
+        end
+
+        local balance = tonumber(current)
+        local refund = tonumber(ARGV[1])
+
+        redis.call(
+            "SET",
+            KEYS[1],
+            tostring(balance + refund)
+        )
+
+        return 1
+    `;
+
+    try {
+        await client.eval(
+            script,
+            [key],
+            [amount.toString()]
+        );
+
+        console.log(
+            '↩️ Redis kredīti atgriezti | Credits refunded:',
+            amount.toString()
+        );
+    } catch (error) {
+        console.error(
+            'KRITISKA Redis refund kļūda:',
+            error
+        );
+
+        throw new Error(
+            'Redis kredītu atgriešana neizdevās.'
+        );
+    }
+}
+
+/**
+ * Iegūst lietotāja Treasury deposit bilanci.
+ *
+ * Šī bilance nav automātiski tas pats,
+ * kas Treasury smart-contract balance.
+ */
+export async function getUserDeposits(
+    walletAddress
+) {
+    const client =
+        requireRedis();
+
+    try {
+        const value =
+            await client.get(
+                depositsKey(
+                    walletAddress
+                )
+            );
+
+        return parseBigInt(value);
+    } catch (error) {
+        console.warn(
+            'Redis deposit get kļūda:',
+            error.message
+        );
+
+        throw new Error(
+            'Redis deposit nolasīšana neizdevās.'
+        );
+    }
+}
+
+/**
+ * Iestata lietotāja deposit bilanci.
+ */
+export async function setUserDeposits(
+    walletAddress,
+    depositAmount
+) {
+    const client =
+        requireRedis();
+
+    const amount =
+        parseBigInt(
+            depositAmount
+        );
+
+    try {
+        await client.set(
+            depositsKey(
+                walletAddress
+            ),
+            amount.toString()
+        );
+
+        console.log(
+            '✅ Lietotāja iemaksas atjauninātas | User deposits updated:',
+            amount.toString()
+        );
+    } catch (error) {
+        console.warn(
+            'Redis deposit set kļūda:',
+            error.message
+        );
+
+        throw new Error(
+            'Redis deposit atjaunināšana neizdevās.'
+        );
+    }
+}
+
+/**
+ * Izveido backup job.
+ *
+ * Job dati atrodas servera pusē.
+ * Frontend saņem tikai nejaušu jobId.
+ */
+export async function createJob(
+    jobId,
+    job,
+    ttlSeconds = DEFAULT_JOB_TTL
+) {
+    const client =
+        requireRedis();
+
+    if (
+        typeof jobId !== 'string' ||
+        jobId.length < 20
+    ) {
+        throw new Error(
+            'Nederīgs jobId.'
+        );
+    }
+
+    if (
+        !job ||
+        typeof job !== 'object'
+    ) {
+        throw new Error(
+            'Nederīgi job dati.'
+        );
+    }
+
+    const ttl =
+        Number(ttlSeconds);
+
+    if (
+        !Number.isInteger(ttl) ||
+        ttl <= 0
+    ) {
+        throw new Error(
+            'Nederīgs job TTL.'
+        );
+    }
+
+    const key =
+        jobKey(jobId);
+
+    const value =
+        JSON.stringify(
+            job
+        );
+
+    try {
+        const result =
+            await client.set(
+                key,
+                value,
+                {
+                    nx: true,
+                    ex: ttl
+                }
+            );
+
+        if (result !== 'OK') {
+            throw new Error(
+                'Job ar šādu ID jau eksistē.'
+            );
+        }
+
+        return true;
+    } catch (error) {
+        console.error(
+            'Redis createJob kļūda:',
+            error
+        );
+
+        throw new Error(
+            'Backup job izveide neizdevās.'
+        );
+    }
+}
+
+/**
+ * Iegūst backup job.
+ */
+export async function getJob(
+    jobId
+) {
+    const client =
+        requireRedis();
+
+    if (
+        typeof jobId !== 'string' ||
+        jobId.length < 20
+    ) {
+        throw new Error(
+            'Nederīgs jobId.'
+        );
+    }
+
+    try {
+        const value =
+            await client.get(
+                jobKey(jobId)
+            );
+
+        if (!value) {
+            return null;
+        }
+
+        if (
+            typeof value ===
+            'object'
+        ) {
+            return value;
+        }
+
+        return JSON.parse(
+            String(value)
+        );
+    } catch (error) {
+        console.error(
+            'Redis getJob kļūda:',
+            error
+        );
+
+        throw new Error(
+            'Backup job nolasīšana neizdevās.'
+        );
+    }
+}
+
+/**
+ * Atjaunina backup job.
+ *
+ * Tiek izmantots Redis GET + SET,
+ * bet job request serializāciju papildus
+ * nodrošina servera procesa withJobLock().
+ *
+ * Kritiskās finanšu operācijas
+ * NETIEK veiktas ar šo funkciju.
+ */
+export async function updateJob(
+    jobId,
+    patch,
+    ttlSeconds = DEFAULT_JOB_TTL
+) {
+    const client =
+        requireRedis();
+
+    const current =
+        await getJob(jobId);
+
+    if (!current) {
+        throw new Error(
+            'Backup job nav atrasts.'
+        );
+    }
+
+    const next = {
+        ...current,
+        ...patch,
+        updatedAt:
+            Date.now()
+    };
+
+    await client.set(
+        jobKey(jobId),
+        JSON.stringify(next),
+        {
+            ex:
+                Number(ttlSeconds)
+        }
+    );
+
+    return next;
+}
+
+/**
+ * Claimo payment transaction.
+ *
+ * Payment tx hash ir globāli vienreizējs:
+ * viens tx nevar tikt izmantots diviem
+ * dažādiem backup posmiem.
+ *
+ * Redis SET NX nodrošina atomisku claim.
+ */
+export async function claimPaymentTx(
+    txHash,
+    metadata = {}
+) {
+    const client =
+        requireRedis();
+
+    const key =
+        paymentKey(txHash);
+
+    const value =
+        JSON.stringify({
+            txHash,
+            ...metadata,
+            claimedAt:
+                Date.now()
+        });
+
+    try {
+        const result =
+            await client.set(
+                key,
+                value,
+                {
+                    nx: true,
+                    ex:
+                        PAYMENT_TTL
+                }
+            );
+
+        return result === 'OK';
+    } catch (error) {
+        console.error(
+            'Redis payment claim kļūda:',
+            error
+        );
+
+        throw new Error(
+            'Payment tx reģistrācija neizdevās.'
+        );
+    }
+}
+
+/**
+ * Nolasa payment claim informāciju.
+ */
+export async function getPaymentClaim(
+    txHash
+) {
+    const client =
+        requireRedis();
+
+    try {
+        const value =
+            await client.get(
+                paymentKey(txHash)
+            );
+
+        if (!value) {
+            return null;
+        }
+
+        if (
+            typeof value ===
+            'object'
+        ) {
+            return value;
+        }
+
+        return JSON.parse(
+            String(value)
+        );
+    } catch (error) {
+        console.error(
+            'Redis payment get kļūda:',
+            error
+        );
+
+        throw new Error(
+            'Payment claim nolasīšana neizdevās.'
+        );
+    }
 }
