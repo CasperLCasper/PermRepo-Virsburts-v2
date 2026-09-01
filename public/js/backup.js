@@ -10,11 +10,9 @@ let repoName = null;
 let tokenId = null;
 let githubUser = null;
 let currentLanguage = localStorage.getItem('permrepo-language') || 'lv';
+let currentJobId = null;
 let currentFileCostEth = '0';
 let currentManifestCostEth = '0';
-let currentFileWinc = '0';
-let currentManifestWinc = '0';
-let currentNewUserCredits = '0';
 let masterKey = null;
 let currentUnchangedFiles = {};
 let currentPreviousHistory = [];
@@ -383,11 +381,10 @@ async function prepareBackup() {
             return;
         }
         
+        currentJobId = result.jobId;
         currentUnchangedFiles = result.unchangedFiles || {};
         currentFiles = result.files || [];
         currentFileCostEth = result.fileCostEth || '0';
-        currentFileWinc = result.fileWinc || '0';
-        currentNewUserCredits = result.newUserCredits || '0';
         currentPreviousHistory = result.previousHistory || [];
         currentPreviousManifestId = result.previousManifestId || null;
         currentPreviousBackupNumber = result.previousBackupNumber || null;
@@ -498,22 +495,17 @@ async function executeZipUpload() {
             hasDepositedFiles = true;
         }
         
-        // 6. AUGŠUPIELĀDE ZIP
+        // 6. AUGŠUPIELĀDE ZIP — sūta tikai jobId un datus
         setStatus(t('uploading'));
         
         const executeResponse = await fetch('/api/execute-backup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                repoName: `${githubUser}/${repoName}`,
-                tokenId: tokenId.toString(),
-                walletAddress: userAddress,
-                fileCostEth: currentFileCostEth,
-                newUserCredits: currentNewUserCredits,
+                jobId: currentJobId,
                 encryptedZip: Array.from(encryptedZipData),
                 iv: Array.from(currentIV),
-                fileMetadata: currentFileMetadata,
-                fileWinc: currentFileWinc
+                fileMetadata: currentFileMetadata
             })
         });
         
@@ -560,16 +552,10 @@ async function finalizeManifest(zipTxId, button) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                repoName: `${githubUser}/${repoName}`,
-                tokenId: tokenId.toString(),
-                walletAddress: userAddress,
+                jobId: currentJobId,
                 zipTxId,
                 fileMetadata: currentFileMetadata,
                 unchangedFiles: currentUnchangedFiles,
-                previousHistory: currentPreviousHistory,
-                previousManifestId: currentPreviousManifestId,
-                previousBackupNumber: currentPreviousBackupNumber,
-                previousEncryptionIVs: currentPreviousEncryptionIVs,
                 iv: Array.from(currentIV)
             })
         });
@@ -585,11 +571,9 @@ async function finalizeManifest(zipTxId, button) {
         
         // Faktiskās manifesta izmaksas no servera atbildes
         currentManifestCostEth = manifestResult.manifestCostEth || '0';
-        currentManifestWinc = manifestResult.manifestWinc || '0';
-        const manifestSize = manifestResult.manifestSize || 0;
+        const manifestSize = JSON.stringify(manifestResult.manifest).length;
         const manifestSizeText = formatFileSize(manifestSize);
         
-        // Parāda manifesta izmaksas
         document.getElementById('status').innerHTML = 
             `${t('manifest-ready')}<br><br>` +
             `${t('manifest-size')}: ${manifestSizeText}<br>` +
@@ -660,6 +644,7 @@ async function finalizeManifest(zipTxId, button) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                jobId: currentJobId,
                 tokenId: tokenId.toString(),
                 manifestTxId: manifestResult.manifestTxId,
                 fileMetadata: currentFileMetadata,
