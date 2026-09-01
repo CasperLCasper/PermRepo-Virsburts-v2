@@ -478,6 +478,7 @@ async function executeZipUpload() {
         
         // 5. IEMAKSA PAR ZIP
         const fileCostWei = ethers.parseEther(currentFileCostEth);
+        let filePaymentTxHash = null; // PIEVIENOTS: mainīgais transakcijas hešam
         
         if (fileCostWei > 0n && !hasDepositedFiles) {
             setStatus(`${t('deposit-files')}: ${currentFileCostEth} Base ETH...`);
@@ -490,6 +491,8 @@ async function executeZipUpload() {
             
             setStatus(t('waiting'));
             await tx.wait();
+            
+            filePaymentTxHash = tx.hash; // PIEVIENOTS: saglabājam hešu
             
             setStatus(t('success'));
             hasDepositedFiles = true;
@@ -505,7 +508,8 @@ async function executeZipUpload() {
                 jobId: currentJobId,
                 encryptedZip: Array.from(encryptedZipData),
                 iv: Array.from(currentIV),
-                fileMetadata: currentFileMetadata
+                fileMetadata: currentFileMetadata,
+                paymentTxHash: filePaymentTxHash // PIEVIENOTS: sūtam uz serveri
             })
         });
         
