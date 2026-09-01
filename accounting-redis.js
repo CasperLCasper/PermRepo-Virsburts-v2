@@ -121,7 +121,9 @@ export async function setJobState(jobId, state) {
     if (!redis) return;
     
     try {
-        await redis.set(`job:${jobId}`, JSON.stringify(state));
+        const jsonState = JSON.stringify(state);
+        await redis.set(`job:${jobId}`, jsonState);
+        console.log('✅ Job stāvoklis saglabāts | Job state saved:', jobId);
     } catch (e) {
         console.warn('Redis job set kļūda | Redis job set error:', e.message);
     }
@@ -136,7 +138,11 @@ export async function getJobState(jobId) {
     
     try {
         const state = await redis.get(`job:${jobId}`);
-        return state ? JSON.parse(state) : null;
+        if (!state) return null;
+        if (typeof state === 'string') {
+            return JSON.parse(state);
+        }
+        return state;
     } catch (e) {
         console.warn('Redis job get kļūda | Redis job get error:', e.message);
         return null;
@@ -152,6 +158,7 @@ export async function setUserCredits(walletAddress, wincAmount) {
     
     try {
         await redis.set(`user:${walletAddress.toLowerCase()}:winc`, wincAmount.toString());
+        console.log('✅ Lietotāja kredīti atjaunināti | User credits updated:', wincAmount.toString());
     } catch (e) {
         console.warn('Redis set kļūda | Redis set error:', e.message);
     }
