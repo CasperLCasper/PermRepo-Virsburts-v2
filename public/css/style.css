@@ -11,6 +11,7 @@
     --accent: #58a6ff;
     --accent-dim: rgba(88, 166, 255, 0.1);
     --green: #3fb950;
+    --green-gradient: linear-gradient(135deg, #238636 0%, #2ea043 100%);
     --red: #f85149;
     --radius: 12px;
     --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -54,7 +55,7 @@ body {
     background: transparent;
     border: 1px solid var(--border);
     border-radius: 20px;
-    color: var(--text-secondary); 
+    color: #ffffff; 
     font-size: 13px; 
     font-weight: 500;
     cursor: pointer; 
@@ -62,7 +63,7 @@ body {
     letter-spacing: 0.5px;
 }
 .lang-btn:hover { 
-    color: var(--text);
+    color: #ffffff;
     border-color: var(--border-hover);
     background: var(--surface-hover);
 }
@@ -138,11 +139,31 @@ h1 {
 }
 .repo-select option { background: #161b22; color: var(--text); }
 
-/* Pogas */
+/* Repo status paziņojums — CENTRĒTS */
+.repo-status-display {
+    text-align: center;
+    padding: 16px;
+    margin-top: 16px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 500;
+}
+.repo-status-display.has-nft {
+    background: rgba(63, 185, 80, 0.08);
+    color: var(--green);
+    border: 1px solid rgba(63, 185, 80, 0.2);
+}
+.repo-status-display.no-nft {
+    background: rgba(248, 81, 73, 0.08);
+    color: var(--red);
+    border: 1px solid rgba(248, 81, 73, 0.2);
+}
+
+/* Pogas — ZAĻĀ KRĀSĀ */
 button { 
     width: 100%; 
     padding: 12px; 
-    background: var(--accent);
+    background: var(--green-gradient);
     color: #fff; 
     border: none;
     border-radius: var(--radius); 
@@ -153,9 +174,9 @@ button {
     transition: var(--transition);
 }
 button:hover { 
-    background: #6cb6ff;
+    background: linear-gradient(135deg, #2ea043 0%, #3fb950 100%);
     transform: translateY(-1px);
-    box-shadow: 0 8px 20px rgba(88, 166, 255, 0.25);
+    box-shadow: 0 8px 20px rgba(63, 185, 80, 0.25);
 }
 button:active {
     transform: translateY(0);
