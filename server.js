@@ -23,7 +23,9 @@ import {
     createJob,
     getJob,
     updateJob,
-    claimPaymentTx
+    claimPaymentTx,
+    acquireJobLock,
+    releaseJobLock
 } from './accounting-redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -37,21 +39,16 @@ const PORT = process.env.PORT || 3000;
 
 const RPC_URL = process.env.RPC_URL;
 const OPERATOR_PRIVATE_KEY = process.env.OPERATOR_PRIVATE_KEY;
-
 const TREASURY_ADDRESS = process.env.TREASURY_ADDRESS;
 const NFT_ADDRESS = process.env.NFT_ADDRESS;
 const SUBSCRIPTION_ADDRESS = process.env.SUBSCRIPTION_ADDRESS;
 const USDC_ADDRESS = process.env.USDC_ADDRESS;
-
 const ARWEAVE_GATEWAY = process.env.ARWEAVE_GATEWAY || 'https://ar-io.dev';
 const CHAIN_ID = process.env.CHAIN_ID || '0x14a34';
-
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const GITHUB_REDIRECT_URI = process.env.GITHUB_REDIRECT_URI;
-
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-
+const SESSION_SECRET = process.env.SESSION_SECRET;
 const TURBO_TOKEN = process.env.TURBO_TOKEN || 'base-eth';
 const TURBO_UPLOAD_URL = process.env.TURBO_UPLOAD_URL || 'https://upload.services.ar-io.dev';
 const TURBO_PAYMENT_URL = process.env.TURBO_PAYMENT_URL || 'https://payment.services.ar-io.dev';
@@ -61,6 +58,10 @@ const MAX_REPO_BYTES = Number(process.env.MAX_REPO_BYTES || 524288000);
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES || 104857600);
 const JOB_TTL_SECONDS = Number(process.env.JOB_TTL_SECONDS || 3600);
 const DOWNLOAD_CONCURRENCY = 10;
+
+if (!SESSION_SECRET) {
+    throw new Error('SESSION_SECRET nav iestatīts!');
+}
 
 initRedis();
 
@@ -134,25 +135,15 @@ const TREASURY_ABI = [
     "function isOperator(address account) external view returns (bool)"
 ];
 
-const uploadLocks = new Map();
-
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 async function withJobLock(jobId, fn) {
-    const previous = uploadLocks.get(jobId) || Promise.resolve();
-    let release;
-    const current = new Promise(resolve => { release = resolve; });
-    uploadLocks.set(jobId, previous.then(() => current));
+    const token = await acquireJobLock(jobId);
+    if (!token) {
+        throw new Error('Job jau tiek apstrādāts.');
+    }
     try {
-        await previous;
         return await fn();
     } finally {
-        release();
-        if (uploadLocks.get(jobId) === current) {
-            uploadLocks.delete(jobId);
-        }
+        await releaseJobLock(jobId, token);
     }
 }
 
