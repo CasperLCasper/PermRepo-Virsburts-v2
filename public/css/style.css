@@ -138,29 +138,31 @@ h1 {
     outline: none; 
     border-bottom-color: var(--accent);
 }
-.repo-select option { background: #161b22; color: var(--text); padding: 12px; }
-
-/* APLĪŠI IZKRĪTOŠAJĀ IZVĒLNĒ */
-.repo-option-nft::before {
-    content: '';
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--green);
-    margin-right: 8px;
-    box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
+.repo-select option { 
+    background: #161b22; 
+    color: var(--text); 
+    padding: 12px; 
+    font-size: 14px;
 }
 
-.repo-option-no-nft::before {
-    content: '';
+/* MAZI APLĪŠI TEKSTĀ */
+.dot-inline {
     display: inline-block;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.dot-inline.green {
+    background: var(--green);
+    box-shadow: 0 0 6px rgba(63, 185, 80, 0.5);
+}
+
+.dot-inline.red {
     background: var(--red);
-    margin-right: 8px;
-    box-shadow: 0 0 8px rgba(248, 81, 73, 0.6);
+    box-shadow: 0 0 6px rgba(248, 81, 73, 0.5);
 }
 
 /* Repo status paziņojums */
@@ -177,29 +179,9 @@ h1 {
     background: rgba(63, 185, 80, 0.08);
     border: 1px solid rgba(63, 185, 80, 0.2);
 }
-.repo-status-display.has-nft::before {
-    content: '';
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--green);
-    margin-right: 8px;
-    box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
-}
 .repo-status-display.no-nft {
     background: rgba(248, 81, 73, 0.08);
     border: 1px solid rgba(248, 81, 73, 0.2);
-}
-.repo-status-display.no-nft::before {
-    content: '';
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--red);
-    margin-right: 8px;
-    box-shadow: 0 0 8px rgba(248, 81, 73, 0.6);
 }
 
 /* Abonementa indikators — SPILGTS MIRGOJOŠS */
@@ -210,6 +192,7 @@ h1 {
     border-radius: 50%;
     margin-right: 10px;
     animation: pulse-dot 1.2s ease-in-out infinite;
+    vertical-align: middle;
 }
 
 .subscription-dot.active {
