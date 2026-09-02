@@ -10,6 +10,8 @@ import { Readable } from 'stream';
 import { TurboFactory, EthereumSigner } from '@ardrive/turbo-sdk';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
+import { Redis } from '@upstash/redis';
+import RedisStore from 'connect-redis';
 
 import { checkAllServices } from './healthChecks.js';
 import { submitBackupWithMerkle } from './merkle.js';
@@ -176,7 +178,22 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ==================================================
+// REDIS SESIJAS (MemoryStore vietā)
+// ==================================================
+
+const sessionRedisClient = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN
+});
+
+const redisStore = new RedisStore({
+    client: sessionRedisClient,
+    prefix: 'permrepo:session:'
+});
+
 app.use(session({
+    store: redisStore,
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
