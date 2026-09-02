@@ -48,7 +48,7 @@ const CHAIN_ID = process.env.CHAIN_ID || '0x14a34';
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const GITHUB_REDIRECT_URI = process.env.GITHUB_REDIRECT_URI;
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_SECRET = process.env.SESSION_SECRET;
 const TURBO_TOKEN = process.env.TURBO_TOKEN || 'base-eth';
 const TURBO_UPLOAD_URL = process.env.TURBO_UPLOAD_URL || 'https://upload.services.ar-io.dev';
 const TURBO_PAYMENT_URL = process.env.TURBO_PAYMENT_URL || 'https://payment.services.ar-io.dev';
@@ -58,6 +58,10 @@ const MAX_REPO_BYTES = Number(process.env.MAX_REPO_BYTES || 524288000);
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES || 104857600);
 const JOB_TTL_SECONDS = Number(process.env.JOB_TTL_SECONDS || 3600);
 const DOWNLOAD_CONCURRENCY = 10;
+
+if (!SESSION_SECRET) {
+    throw new Error('SESSION_SECRET nav iestatīts!');
+}
 
 initRedis();
 
@@ -171,10 +175,6 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
-
-// ==================================================
-// SESIJAS — MemoryStore (vienkārši un strādā)
-// ==================================================
 
 app.use(session({
     secret: SESSION_SECRET,
