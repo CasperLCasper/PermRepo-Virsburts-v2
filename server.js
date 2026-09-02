@@ -10,6 +10,7 @@ import { Readable } from 'stream';
 import { TurboFactory, EthereumSigner } from '@ardrive/turbo-sdk';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
+import fs from 'fs';
 
 import { checkAllServices } from './healthChecks.js';
 import { submitBackupWithMerkle } from './merkle.js';
@@ -57,8 +58,8 @@ const MAX_REPO_FILES = Number(process.env.MAX_REPO_FILES || 5000);
 const MAX_REPO_BYTES = Number(process.env.MAX_REPO_BYTES || 524288000);
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES || 104857600);
 const JOB_TTL_SECONDS = Number(process.env.JOB_TTL_SECONDS || 3600);
-const DOWNLOAD_CONCURRENCY = 3;
-const MAX_TX_AGE_SECONDS = 4 * 60 * 60; // 4 stundas
+const DOWNLOAD_CONCURRENCY = 10;
+const MAX_TX_AGE_SECONDS = 4 * 60 * 60;
 
 initRedis();
 
@@ -200,7 +201,6 @@ const backupLimiter = rateLimit({
 // ==================================================
 
 const uploadDir = '/tmp/uploads';
-import fs from 'fs';
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -211,7 +211,7 @@ const upload = multer({
         filename: (req, file, cb) => cb(null, `${crypto.randomUUID()}-${file.originalname}`)
     }),
     limits: {
-        fileSize: 524288000  // 500 MB
+        fileSize: 524288000
     }
 });
 
@@ -681,7 +681,7 @@ async function verifyNativePayment({ provider, txHash, expectedFrom, expectedAmo
 }
 
 // ==================================================
-// PREPARE BACKUP
+// PREPARE BACKUP — bez ZIP cenas aprēķina
 // ==================================================
 
 app.post('/api/prepare-backup', async (req, res) => {
@@ -762,23 +762,10 @@ app.post('/api/prepare-backup', async (req, res) => {
         }
         
         if (changedFiles.length === 0) {
-            return res.json({ success: true, jobId: null, files: [], unchangedFiles, fileCount: 0, totalBytes: 0, fileCostEth: '0', backupCount, message: 'Nav izmaiņu' });
+            return res.json({ success: true, jobId: null, files: [], unchangedFiles, fileCount: 0, totalBytes: 0, backupCount, message: 'Nav izmaiņu' });
         }
         
-        const totalFileBytes = changedFiles.reduce((sum, file) => sum + Number(file.size), 0);
-        const estimatedZipSize = Math.ceil(totalFileBytes * 1.1);
-        const turbo = getTurbo();
-        
-        logSection('⚡ TURBO IZMAKSU APRĒĶINS');
-        logInfo('Failu skaits', changedFiles.length);
-        logInfo('Failu izmērs', `${totalFileBytes} bytes`);
-        logInfo('ZIP izmērs aptuveni', `${estimatedZipSize} bytes`);
-        
-        const { winc: fileWinc, tokenPrice: fullFileCostEth } = await calculateTurboCost(turbo, estimatedZipSize);
-        const userCredits = await getUserCredits(normalizedWallet);
-        const useCreditsAtPrepare = userCredits >= fileWinc;
-        const fileCostEth = useCreditsAtPrepare ? '0' : fullFileCostEth;
-        
+        // BEZ ZIP CENAS APRĒĶINA!
         const jobId = crypto.randomUUID();
         
         const job = {
@@ -796,13 +783,6 @@ app.post('/api/prepare-backup', async (req, res) => {
             previousManifestId,
             previousBackupNumber,
             previousEncryptionIVs,
-            fileWinc: fileWinc.toString(),
-            fullFileCostEth,
-            fileCostEth,
-            estimatedZipSize,
-            totalFileBytes,
-            metadataFingerprint: metadataFingerprint(changedFiles),
-            merkleRoot: calculateMerkleRoot(changedFiles),
             status: 'prepared',
             zipUploaded: false,
             zipTxId: null,
@@ -812,19 +792,11 @@ app.post('/api/prepare-backup', async (req, res) => {
             manifest: null,
             filePaymentTxHash: null,
             manifestPaymentTxHash: null,
-            creditsReservedForZip: false,
-            creditsReservedForManifest: false,
             createdAt: Date.now(),
             updatedAt: Date.now()
         };
         
         await createJob(jobId, job, JOB_TTL_SECONDS);
-        
-        logSection('💰 REDIS GRĀMATVEDĪBA');
-        logInfo('Lietotāja kredīti', `${userCredits} winc`);
-        logInfo('Nepieciešamie winc', `${fileWinc} winc`);
-        logInfo('Pilnā Turbo cena', `${fullFileCostEth} Base ETH`);
-        logInfo('Cena lietotājam', `${fileCostEth} Base ETH`);
         
         return res.json({
             success: true,
@@ -838,12 +810,7 @@ app.post('/api/prepare-backup', async (req, res) => {
             previousBackupNumber,
             previousEncryptionIVs,
             fileCount: changedFiles.length,
-            totalBytes: totalFileBytes,
-            estimatedZipSize,
-            fileWinc: fileWinc.toString(),
-            fileCostEth,
-            fullFileCostEth,
-            userCredits: userCredits.toString(),
+            totalBytes: changedFiles.reduce((sum, file) => sum + Number(file.size), 0),
             backupCount
         });
     } catch (error) {
@@ -855,7 +822,7 @@ app.post('/api/prepare-backup', async (req, res) => {
 });
 
 // ==================================================
-// EXECUTE BACKUP — ZIP
+// EXECUTE BACKUP — ZIP — precīza cena no reālā ZIP
 // ==================================================
 
 app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req, res) => {
@@ -874,7 +841,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
         }
         
         const zipBuffer = fs.readFileSync(req.file.path);
-        
         fs.unlinkSync(req.file.path);
         
         if (zipBuffer.length > MAX_REPO_BYTES * 2) {
@@ -912,76 +878,122 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                 return res.json({ success: true, step: 'zip_uploaded', zipTxId: currentJob.zipTxId, idempotent: true });
             }
             
+            const turbo = getTurbo();
+            
+            // PRECĪZA CENA NO REĀLĀ ZIP
+            const { winc: fileWinc, tokenPrice: fullFileCostEth } = await calculateTurboCost(turbo, zipBuffer.length);
+            
             logSection('📤 EXECUTE BACKUP — ZIP');
             logInfo('Job', jobId);
             logInfo('Repo', currentJob.fullRepoName);
-            logInfo('Token ID', currentJob.tokenId);
             logInfo('ZIP bytes', zipBuffer.length);
+            logInfo('Precīza cena', fullFileCostEth + ' ETH');
+            logInfo('Winc', fileWinc.toString());
             
-            const turbo = getTurbo();
-            const fileWinc = BigInt(currentJob.fileWinc);
-            let creditsReserved = false;
-            let paymentVerified = false;
+            const userCredits = await getUserCredits(wallet);
             
-            if (currentJob.fileCostEth !== '0') {
-                if (!paymentTxHash) {
-                    return res.json({ success: false, paymentRequired: true, requiredPaymentEth: currentJob.fullFileCostEth, error: 'Nepieciešama Treasury iemaksas transakcija.' });
+            if (userCredits >= fileWinc) {
+                // Izmanto kredītus
+                const reserved = await reserveUserCredits(wallet, fileWinc);
+                if (!reserved) {
+                    return res.status(400).json({ success: false, error: 'Redis kredītu rezervēšana neizdevās.' });
                 }
-                const expectedWei = ethers.parseEther(currentJob.fullFileCostEth);
+                
+                await updateJob(jobId, {
+                    fileWinc: fileWinc.toString(),
+                    fullFileCostEth,
+                    fileCostEth: '0',
+                    zipStartedAt: Date.now(),
+                    updatedAt: Date.now()
+                });
+                
+                try {
+                    const zipResult = await turbo.uploadFile({
+                        fileStreamFactory: () => Readable.from(zipBuffer),
+                        fileSizeFactory: () => zipBuffer.length,
+                        dataItemOpts: {
+                            tags: [
+                                { name: 'App-Name', value: 'PermRepo' },
+                                { name: 'Repo', value: currentJob.fullRepoName },
+                                { name: 'Type', value: 'backup-archive' },
+                                { name: 'Content-Type', value: 'application/zip' },
+                                { name: 'Encrypted', value: 'true' },
+                                { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
+                            ]
+                        }
+                    });
+                    
+                    await updateJob(jobId, {
+                        zipUploaded: true,
+                        zipTxId: zipResult.id,
+                        status: 'zip_uploaded',
+                        updatedAt: Date.now()
+                    });
+                    
+                    return res.json({ success: true, step: 'zip_uploaded', zipTxId: zipResult.id, iv: parsedIV });
+                } catch (uploadError) {
+                    await refundUserCredits(wallet, fileWinc);
+                    await updateJob(jobId, { status: 'zip_failed', updatedAt: Date.now() });
+                    logError('Turbo ZIP upload failed: ' + errorMessage(uploadError));
+                    return res.status(500).json({ success: false, error: 'Augšupielāde neizdevās: ' + errorMessage(uploadError) });
+                }
+            } else {
+                // Nepieciešams maksājums
+                if (!paymentTxHash) {
+                    return res.json({
+                        success: false,
+                        paymentRequired: true,
+                        requiredPaymentEth: fullFileCostEth,
+                        fileWinc: fileWinc.toString(),
+                        zipSize: zipBuffer.length,
+                        error: 'Nepieciešama Treasury iemaksas transakcija.'
+                    });
+                }
+                
+                // Pārbauda payment tx
+                const expectedWei = ethers.parseEther(fullFileCostEth);
                 await verifyNativePayment({ provider, txHash: paymentTxHash, expectedFrom: wallet, expectedAmountWei: expectedWei });
                 const claimed = await claimPaymentTx(paymentTxHash, { jobId, stage: 'zip', walletAddress: wallet, amountWei: expectedWei.toString() });
                 if (!claimed) throw new Error('Šī payment transakcija jau ir izmantota.');
-                paymentVerified = true;
-            } else {
-                const reserved = await reserveUserCredits(wallet, fileWinc);
-                if (!reserved) {
-                    return res.json({ success: false, paymentRequired: true, requiredPaymentEth: currentJob.fullFileCostEth, error: 'Redis kredītu vairs nepietiek. Nepieciešama Treasury iemaksa.' });
-                }
-                creditsReserved = true;
-            }
-            
-            await updateJob(jobId, {
-                zipStartedAt: Date.now(),
-                filePaymentTxHash: paymentVerified ? paymentTxHash : null,
-                creditsReservedForZip: creditsReserved,
-                updatedAt: Date.now()
-            });
-            
-            try {
-                const zipResult = await turbo.uploadFile({
-                    fileStreamFactory: () => Readable.from(zipBuffer),
-                    fileSizeFactory: () => zipBuffer.length,
-                    dataItemOpts: {
-                        tags: [
-                            { name: 'App-Name', value: 'PermRepo' },
-                            { name: 'Repo', value: currentJob.fullRepoName },
-                            { name: 'Type', value: 'backup-archive' },
-                            { name: 'Content-Type', value: 'application/zip' },
-                            { name: 'Encrypted', value: 'true' },
-                            { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
-                        ]
-                    }
-                });
                 
                 await updateJob(jobId, {
-                    zipUploaded: true,
-                    zipTxId: zipResult.id,
-                    status: 'zip_uploaded',
+                    fileWinc: fileWinc.toString(),
+                    fullFileCostEth,
+                    fileCostEth: fullFileCostEth,
+                    filePaymentTxHash: paymentTxHash,
+                    zipStartedAt: Date.now(),
                     updatedAt: Date.now()
                 });
                 
-                return res.json({ success: true, step: 'zip_uploaded', zipTxId: zipResult.id, iv: parsedIV });
-            } catch (uploadError) {
-                if (creditsReserved) {
-                    await refundUserCredits(wallet, fileWinc);
+                try {
+                    const zipResult = await turbo.uploadFile({
+                        fileStreamFactory: () => Readable.from(zipBuffer),
+                        fileSizeFactory: () => zipBuffer.length,
+                        dataItemOpts: {
+                            tags: [
+                                { name: 'App-Name', value: 'PermRepo' },
+                                { name: 'Repo', value: currentJob.fullRepoName },
+                                { name: 'Type', value: 'backup-archive' },
+                                { name: 'Content-Type', value: 'application/zip' },
+                                { name: 'Encrypted', value: 'true' },
+                                { name: 'Unix-Time', value: String(Math.floor(Date.now() / 1000)) }
+                            ]
+                        }
+                    });
+                    
+                    await updateJob(jobId, {
+                        zipUploaded: true,
+                        zipTxId: zipResult.id,
+                        status: 'zip_uploaded',
+                        updatedAt: Date.now()
+                    });
+                    
+                    return res.json({ success: true, step: 'zip_uploaded', zipTxId: zipResult.id, iv: parsedIV });
+                } catch (uploadError) {
+                    await updateJob(jobId, { status: 'zip_failed', updatedAt: Date.now() });
+                    logError('Turbo ZIP upload failed: ' + errorMessage(uploadError));
+                    return res.status(500).json({ success: false, error: 'Augšupielāde neizdevās: ' + errorMessage(uploadError) });
                 }
-                await updateJob(jobId, {
-                    creditsReservedForZip: false,
-                    status: 'zip_failed',
-                    updatedAt: Date.now()
-                });
-                logError('Turbo ZIP upload failed: ' + errorMessage(uploadError));
-                return res.status(500).json({ success: false, error: 'Augšupielāde neizdevās: ' + errorMessage(uploadError) });
             }
         });
     } catch (error) {
