@@ -40,8 +40,13 @@
     
     <button id="startBackupButton" class="sign-button backup-button" data-i18n="start-backup" disabled>Sākt backupu</button>
     
-    <div class="status" id="status"></div>
-    <div class="error" id="error"></div>
+    <!-- Jaunā statusa kartīte -->
+    <div class="status-card" id="statusCard" style="display: none;">
+        <span class="status-icon" id="statusIcon"></span>
+        <div id="statusContent"></div>
+    </div>
+    
+    <div class="error" id="error" style="display: none;"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js" integrity="sha256-dOAMPiqczTEubVFU+cywkR0bNMtJvIIgJEopKgp3PCE=" crossorigin="anonymous"></script>
