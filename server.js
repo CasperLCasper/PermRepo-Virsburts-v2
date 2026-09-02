@@ -58,7 +58,7 @@ const MAX_REPO_FILES = Number(process.env.MAX_REPO_FILES || 5000);
 const MAX_REPO_BYTES = Number(process.env.MAX_REPO_BYTES || 524288000);
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES || 104857600);
 const JOB_TTL_SECONDS = Number(process.env.JOB_TTL_SECONDS || 3600);
-const DOWNLOAD_CONCURRENCY = 10;
+const DOWNLOAD_CONCURRENCY = 3;
 const MAX_TX_AGE_SECONDS = 4 * 60 * 60;
 
 initRedis();
