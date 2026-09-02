@@ -544,7 +544,6 @@ async function executeZipUpload() {
         
         setStatus(t('uploading'));
         
-        // PIRMAIS MĒĢINĀJUMS — bez paymentTxHash
         const firstResult = await uploadZipBinary({
             jobId: currentJobId,
             encryptedZip: encryptedZipData,
@@ -553,20 +552,22 @@ async function executeZipUpload() {
         });
         
         if (firstResult.paymentRequired) {
-            // Serveris prasa maksājumu
             currentFileCostEth = firstResult.requiredPaymentEth || '0';
+            
+            // PARĀDA CENU UN GAIDA 2 SEKUNDES
+            setStatus(`${t('deposit-files')}: ${currentFileCostEth} Base ETH`);
+            button.textContent = '⏳';
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
             const requiredWei = ethers.parseEther(currentFileCostEth);
             if (requiredWei <= 0n) throw new Error('Serveris pieprasīja maksājumu ar nulles summu.');
             
             setStatus(`${t('deposit-files')}: ${currentFileCostEth} Base ETH...`);
-            button.textContent = '⏳';
-            
             const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: requiredWei });
             setStatus(t('waiting'));
             await tx.wait();
             hasDepositedFiles = true;
             
-            // OTRAIS MĒĢINĀJUMS — ar paymentTxHash
             setStatus(t('uploading'));
             const retryResult = await uploadZipBinary({
                 jobId: currentJobId,
@@ -637,7 +638,6 @@ async function finalizeManifest(zipTxId, button) {
             currentManifestPayload = manifestResult.manifest;
             currentManifestCostEth = manifestResult.requiredPaymentEth || '0';
             
-            // UTF-8 byte count
             const manifestBytes = new TextEncoder().encode(JSON.stringify(manifestResult.manifest));
             const manifestSize = manifestBytes.length;
             
@@ -645,6 +645,8 @@ async function finalizeManifest(zipTxId, button) {
                 `${t('manifest-ready')}\n\n` +
                 `${t('manifest-size')}: ${formatFileSize(manifestSize)}\n` +
                 `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
+            
+            await new Promise(resolve => setTimeout(resolve, 2000));
             
             const manifestCostWei = ethers.parseEther(currentManifestCostEth);
             if (manifestCostWei <= 0n) throw new Error('Serveris pieprasīja manifesta maksājumu ar nulles summu.');
