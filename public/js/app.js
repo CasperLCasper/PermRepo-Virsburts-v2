@@ -287,7 +287,7 @@ async function loadRepos() {
             
             const option = document.createElement('option');
             option.value = repo.name;
-            option.textContent = `${repo.name}${repo.private ? ' 🔒' : ''}`;
+            option.textContent = `${hasNFT ? '🟢' : '🔴'} ${repo.name}${repo.private ? ' 🔒' : ''}`;
             option.className = hasNFT ? 'repo-option-nft' : 'repo-option-no-nft';
             select.appendChild(option);
         }
@@ -331,7 +331,7 @@ async function checkRepoStatus(repoName) {
         repoActions.style.display = 'block';
         
         if (tokenId !== 0n) {
-            repoStatus.textContent = t('nft-linked');
+            repoStatus.textContent = `🟢 ${t('nft-linked')}`;
             repoStatus.className = 'repo-status-display has-nft';
             actionButton.textContent = t('open-backup');
             actionButton.className = 'sign-button backup-button';
@@ -340,7 +340,7 @@ async function checkRepoStatus(repoName) {
                 window.location.href = `/backup.html?repo=${encodeURIComponent(repoName)}`;
             };
         } else {
-            repoStatus.textContent = t('no-nft');
+            repoStatus.textContent = `🔴 ${t('no-nft')}`;
             repoStatus.className = 'repo-status-display no-nft';
             actionButton.textContent = t('mint-nft');
             actionButton.className = 'sign-button';
