@@ -48,7 +48,7 @@ const CHAIN_ID = process.env.CHAIN_ID || '0x14a34';
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const GITHUB_REDIRECT_URI = process.env.GITHUB_REDIRECT_URI;
-const SESSION_SECRET = process.env.SESSION_SECRET;
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const TURBO_TOKEN = process.env.TURBO_TOKEN || 'base-eth';
 const TURBO_UPLOAD_URL = process.env.TURBO_UPLOAD_URL || 'https://upload.services.ar-io.dev';
 const TURBO_PAYMENT_URL = process.env.TURBO_PAYMENT_URL || 'https://payment.services.ar-io.dev';
@@ -57,11 +57,8 @@ const MAX_REPO_FILES = Number(process.env.MAX_REPO_FILES || 5000);
 const MAX_REPO_BYTES = Number(process.env.MAX_REPO_BYTES || 524288000);
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES || 104857600);
 const JOB_TTL_SECONDS = Number(process.env.JOB_TTL_SECONDS || 3600);
-const DOWNLOAD_CONCURRENCY = 3;
-
-if (!SESSION_SECRET) {
-    throw new Error('SESSION_SECRET nav iestatīts!');
-}
+const DOWNLOAD_CONCURRENCY = 10;
+const MAX_TX_AGE_SECONDS = 4 * 60 * 60; // 4 stundas
 
 initRedis();
 
@@ -199,15 +196,69 @@ const backupLimiter = rateLimit({
 });
 
 // ==================================================
-// MULTER BINARY UPLOAD
+// MULTER DISK STORAGE
 // ==================================================
 
+const uploadDir = '/tmp/uploads';
+import fs from 'fs';
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const upload = multer({
-    storage: multer.memoryStorage(),
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => cb(null, uploadDir),
+        filename: (req, file, cb) => cb(null, `${crypto.randomUUID()}-${file.originalname}`)
+    }),
     limits: {
-        fileSize: 100 * 1024 * 1024
+        fileSize: 524288000  // 500 MB
     }
 });
+
+// ==================================================
+// GITHUB API AR RETRY
+// ==================================================
+
+async function fetchWithRetry(url, options, retries = 3) {
+    for (let attempt = 0; attempt < retries; attempt++) {
+        const response = await fetch(url, options);
+        
+        if (response.status === 403 || response.status === 429) {
+            const remaining = response.headers.get('x-ratelimit-remaining');
+            const resetTime = response.headers.get('x-ratelimit-reset');
+            
+            if (remaining === '0' && resetTime) {
+                const resetSeconds = Number(resetTime);
+                const now = Math.floor(Date.now() / 1000);
+                const waitTime = Math.max(resetSeconds - now, 1);
+                
+                console.warn(`GitHub rate limit sasniegts. Gaida ${waitTime} sekundes...`);
+                
+                if (waitTime > 60) {
+                    throw new Error(`GitHub rate limit sasniegts. Atgriezies pēc ${Math.ceil(waitTime / 60)} minūtēm.`);
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+                continue;
+            }
+        }
+        
+        if (response.status === 429) {
+            const backoff = Math.pow(2, attempt) * 1000;
+            console.warn(`HTTP 429 — mēģina pēc ${backoff}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoff));
+            continue;
+        }
+        
+        if (!response.ok) {
+            throw new Error(`GitHub API kļūda: ${response.status}`);
+        }
+        
+        return response;
+    }
+    
+    throw new Error('GitHub API pieprasījums neizdevās pēc vairākiem mēģinājumiem.');
+}
 
 // ==================================================
 // PROVIDER / OPERATOR
@@ -413,10 +464,9 @@ app.get('/api/github/repos', async (req, res) => {
     const githubToken = req.session.githubToken;
     if (!githubToken) return res.status(401).json({ success: false, error: 'Nav autorizēts' });
     try {
-        const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+        const response = await fetchWithRetry('https://api.github.com/user/repos?per_page=100&sort=updated', {
             headers: { Authorization: `Bearer ${githubToken}`, Accept: 'application/vnd.github.v3+json' }
         });
-        if (!response.ok) throw new Error(`GitHub API kļūda: ${response.status}`);
         const repos = await response.json();
         return res.json({ success: true, repos });
     } catch (error) {
@@ -463,16 +513,13 @@ app.get('/api/subscription/status', async (req, res) => {
 });
 
 // ==================================================
-// GITHUB FILES — ar concurrency = 10
+// GITHUB FILES — ar concurrency un retry
 // ==================================================
 
 async function downloadSingleFile(githubToken, file) {
-    const fileResponse = await fetch(file.download_url, {
+    const fileResponse = await fetchWithRetry(file.download_url, {
         headers: { Authorization: `Bearer ${githubToken}`, Accept: 'application/octet-stream' }
     });
-    if (!fileResponse.ok) {
-        throw new Error(`Neizdevās lejupielādēt ${file.path}: HTTP ${fileResponse.status}`);
-    }
     const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
     if (fileBuffer.length > MAX_FILE_BYTES) {
         throw new Error(`Fails ${file.path} pārsniedz izmēra limitu.`);
@@ -502,15 +549,13 @@ async function getRepoFiles(githubToken, owner, repo, repoPath = '', state = nul
     if (state.visited.has(url)) return state.files;
     state.visited.add(url);
     
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
         headers: {
             Authorization: `Bearer ${githubToken}`,
             Accept: 'application/vnd.github.v3+json',
             'X-GitHub-Api-Version': '2022-11-28'
         }
     });
-    
-    if (!response.ok) throw new Error(`GitHub API kļūda: ${response.status}`);
     
     const contents = await response.json();
     if (!Array.isArray(contents)) return state.files;
@@ -583,32 +628,56 @@ async function verifyJobNFTOwner(provider, job) {
 }
 
 // ==================================================
-// PAYMENT VERIFICATION
+// PAYMENT VERIFICATION — ar timestamp
 // ==================================================
 
 async function verifyNativePayment({ provider, txHash, expectedFrom, expectedAmountWei }) {
     if (typeof txHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
         throw new Error('Nederīgs payment tx hash.');
     }
+    
     const tx = await provider.getTransaction(txHash);
     if (!tx) throw new Error('Payment transakcija nav atrasta.');
+    
     const receipt = await provider.getTransactionReceipt(txHash);
     if (!receipt) throw new Error('Payment transakcija vēl nav apstiprināta.');
     if (receipt.status !== 1) throw new Error('Payment transakcija neizdevās.');
+    
+    const block = await provider.getBlock(receipt.blockNumber);
+    if (!block) throw new Error('Payment bloks nav atrasts.');
+    
+    const blockTimestamp = Number(block.timestamp);
+    const now = Math.floor(Date.now() / 1000);
+    const txAge = now - blockTimestamp;
+    
+    if (txAge > MAX_TX_AGE_SECONDS) {
+        throw new Error(`Payment transakcija ir pārāk veca (${Math.floor(txAge / 3600)} stundas).`);
+    }
+    
     const from = safeWallet(tx.from);
     const to = tx.to ? safeWallet(tx.to) : null;
     const treasury = safeWallet(TREASURY_ADDRESS);
+    
     if (!from || from.toLowerCase() !== expectedFrom.toLowerCase()) {
         throw new Error('Payment sūtītājs nesakrīt ar backup maka adresi.');
     }
     if (!to || !treasury || to.toLowerCase() !== treasury.toLowerCase()) {
         throw new Error('Payment saņēmējs nav PermRepo Treasury.');
     }
+    
     const actualValue = BigInt(tx.value);
     if (actualValue !== BigInt(expectedAmountWei)) {
         throw new Error('Payment summa nesakrīt ar servera aprēķināto summu.');
     }
-    return { txHash, blockNumber: receipt.blockNumber, from, to, value: actualValue };
+    
+    return { 
+        txHash, 
+        blockNumber: receipt.blockNumber, 
+        blockTimestamp,
+        from, 
+        to, 
+        value: actualValue 
+    };
 }
 
 // ==================================================
@@ -786,7 +855,7 @@ app.post('/api/prepare-backup', async (req, res) => {
 });
 
 // ==================================================
-// EXECUTE BACKUP — ZIP — binary upload (multer)
+// EXECUTE BACKUP — ZIP
 // ==================================================
 
 app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req, res) => {
@@ -800,13 +869,15 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
         const provider = getProvider();
         await verifyJobNFTOwner(provider, job);
         
-        if (!req.file || !req.file.buffer) {
+        if (!req.file || !req.file.path) {
             return res.status(400).json({ success: false, error: 'Šifrēts ZIP ir obligāts' });
         }
         
-        const encryptedZip = req.file.buffer;
+        const zipBuffer = fs.readFileSync(req.file.path);
         
-        if (encryptedZip.length > MAX_REPO_BYTES * 2) {
+        fs.unlinkSync(req.file.path);
+        
+        if (zipBuffer.length > MAX_REPO_BYTES * 2) {
             return res.status(413).json({ success: false, error: 'Šifrētais ZIP ir pārāk liels.' });
         }
         
@@ -840,8 +911,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
             if (currentJob.zipUploaded && currentJob.zipTxId) {
                 return res.json({ success: true, step: 'zip_uploaded', zipTxId: currentJob.zipTxId, idempotent: true });
             }
-            
-            const zipBuffer = encryptedZip;
             
             logSection('📤 EXECUTE BACKUP — ZIP');
             logInfo('Job', jobId);
