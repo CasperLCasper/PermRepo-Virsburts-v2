@@ -15,7 +15,6 @@ import crypto from 'crypto';
 let redis = null;
 
 const DEFAULT_JOB_TTL = Number(process.env.JOB_TTL_SECONDS || 3600);
-const PAYMENT_TTL = Number(process.env.PAYMENT_CLAIM_TTL_SECONDS || 86400 * 30);
 const JOB_LOCK_TTL = Number(process.env.JOB_LOCK_TTL_SECONDS || 30);
 
 function normalizeWallet(walletAddress) {
@@ -219,7 +218,7 @@ export async function claimPaymentTx(txHash, metadata = {}) {
     const key = paymentKey(txHash);
     const value = JSON.stringify({ txHash, ...metadata, claimedAt: Date.now() });
     try {
-        const result = await client.set(key, value, { nx: true, ex: PAYMENT_TTL });
+        const result = await client.set(key, value, { nx: true });
         return result === 'OK';
     } catch (error) {
         console.error('Redis payment claim kļūda:', error);
