@@ -42,8 +42,8 @@ const translations = {
         'mint-nft': 'Izveidot NFT',
         'nft-linked': '✅ NFT ir piesaistīts šim repozitorijam',
         'no-nft': '❌ Šim repozitorijam nav NFT',
-        'subscription-active': '📅 Abonements: AKTĪVS',
-        'subscription-expired': '📅 Abonements: BEIDZIES — ATJAUNOT',
+        'subscription-active': 'Abonements: AKTĪVS',
+        'subscription-expired': 'Abonements: BEIDZIES — ATJAUNOT',
         'days': 'dienas',
         'wallet-connected': 'Maks savienots'
     },
@@ -60,8 +60,8 @@ const translations = {
         'mint-nft': 'Mint NFT',
         'nft-linked': '✅ NFT is linked to this repository',
         'no-nft': '❌ This repository has no NFT',
-        'subscription-active': '📅 Subscription: ACTIVE',
-        'subscription-expired': '📅 Subscription: EXPIRED — RENEW',
+        'subscription-active': 'Subscription: ACTIVE',
+        'subscription-expired': 'Subscription: EXPIRED — RENEW',
         'days': 'days',
         'wallet-connected': 'Wallet connected'
     },
@@ -78,8 +78,8 @@ const translations = {
         'mint-nft': 'Krei NFT',
         'nft-linked': '✅ NFT estas ligita al ĉi tiu deponejo',
         'no-nft': '❌ Ĉi tiu deponejo ne havas NFT',
-        'subscription-active': '📅 Abono: AKTIVA',
-        'subscription-expired': '📅 Abono: FINIĜIS — RENOVIGI',
+        'subscription-active': 'Abono: AKTIVA',
+        'subscription-expired': 'Abono: FINIĜIS — RENOVIGI',
         'days': 'tagoj',
         'wallet-connected': 'Monujo konektita'
     }
@@ -122,13 +122,11 @@ function applyTranslations() {
 }
 
 async function init() {
-    // Valodu pogas — atzīmē aktīvo
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
         btn.onclick = () => switchLanguage(btn.dataset.lang);
     });
     
-    // Sākotnējā tulkošana
     applyTranslations();
     
     try {
@@ -174,17 +172,23 @@ async function checkSubscription() {
             const button = document.getElementById('subscriptionButton');
             document.getElementById('subscriptionSection').style.display = 'block';
             
+            const dot = document.createElement('span');
+            
             if (data.isSubscribed) {
                 const daysLeft = Math.floor(Number(data.remainingTime) / 86400);
+                dot.className = 'subscription-dot active';
                 button.textContent = `${t('subscription-active')} (${daysLeft} ${t('days')})`;
                 button.className = 'subscription-button active';
                 button.disabled = true;
             } else {
+                dot.className = 'subscription-dot expired';
                 button.textContent = t('subscription-expired');
                 button.className = 'subscription-button inactive';
                 button.disabled = false;
                 button.onclick = purchaseSubscription;
             }
+            
+            button.prepend(dot);
         }
     } catch (e) {
         console.error('Abonementa pārbaudes kļūda:', e);
@@ -283,7 +287,7 @@ async function loadRepos() {
             
             const option = document.createElement('option');
             option.value = repo.name;
-            option.textContent = `${hasNFT ? '✅' : '❌'} ${repo.name}${repo.private ? ' 🔒' : ''}`;
+            option.textContent = `${repo.name}${repo.private ? ' 🔒' : ''}`;
             option.className = hasNFT ? 'repo-option-nft' : 'repo-option-no-nft';
             select.appendChild(option);
         }
