@@ -238,7 +238,7 @@ async function apiJson(url, options = {}) {
     const response = await fetch(url, { credentials: 'same-origin', ...options });
     let result;
     try { result = await response.json(); } catch { throw new Error(`Servera kļūda: HTTP ${response.status}`); }
-    if (!response.ok && !result.success) throw new Error(result.error || `HTTP ${response.status}`);
+    if (!response.ok && !result.success && !result.paymentRequired) throw new Error(result.error || `HTTP ${response.status}`);
     return result;
 }
 
@@ -250,66 +250,51 @@ function promptMasterKey() {
     return new Promise(resolve => {
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;justify-content:center;align-items:center;z-index:1000;padding:20px;';
-
         const box = document.createElement('div');
         box.style.cssText = 'background:#161b22;border:1px solid #30363d;border-radius:12px;padding:32px;max-width:480px;width:100%;box-sizing:border-box;';
-
         const title = document.createElement('h2');
         title.textContent = t('key-title');
         title.style.cssText = 'color:#79c0ff;margin-bottom:16px;';
-
         const description = document.createElement('p');
         description.textContent = t('key-description');
         description.style.cssText = 'color:#b0b8c4;margin-bottom:16px;';
-
+        const form = document.createElement('form');
+        form.style.cssText = 'margin:0;';
         const input = document.createElement('input');
         input.type = 'password';
         input.placeholder = t('enter-key');
         input.autocomplete = 'off';
         input.spellcheck = false;
         input.style.cssText = 'width:100%;padding:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;color:#e6edf3;font-size:16px;margin-bottom:16px;box-sizing:border-box;';
-
+        form.appendChild(input);
         const cancelButton = document.createElement('button');
+        cancelButton.type = 'button';
         cancelButton.textContent = t('cancel');
         cancelButton.style.cssText = 'width:100%;padding:12px;background:#30363d;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;margin-bottom:8px;';
-
         const confirmButton = document.createElement('button');
+        confirmButton.type = 'submit';
         confirmButton.textContent = t('confirm-key');
         confirmButton.style.cssText = 'width:100%;padding:12px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;';
-
         box.appendChild(title);
         box.appendChild(description);
-        box.appendChild(input);
+        box.appendChild(form);
         box.appendChild(cancelButton);
         box.appendChild(confirmButton);
         overlay.appendChild(box);
         document.body.appendChild(overlay);
-
         const cleanup = () => { overlay.remove(); };
-
-        confirmButton.onclick = () => {
+        const submit = () => {
             const value = input.value.trim();
             cleanup();
             resolve(value);
         };
-
-        cancelButton.onclick = () => {
-            cleanup();
-            resolve(null);
-        };
-
+        form.addEventListener('submit', e => { e.preventDefault(); submit(); });
+        confirmButton.onclick = submit;
+        cancelButton.onclick = () => { cleanup(); resolve(null); };
         input.addEventListener('keydown', e => {
-            if (e.key === 'Enter') {
-                const value = input.value.trim();
-                cleanup();
-                resolve(value);
-            }
-            if (e.key === 'Escape') {
-                cleanup();
-                resolve(null);
-            }
+            if (e.key === 'Enter') { e.preventDefault(); submit(); }
+            if (e.key === 'Escape') { cleanup(); resolve(null); }
         });
-
         input.focus();
     });
 }
@@ -483,11 +468,11 @@ async function prepareBackup() {
         currentJobId = result.jobId;
         currentUnchangedFiles = result.unchangedFiles || {};
         currentFiles = result.files || [];
-        currentFileCostEth = result.fileCostEth || '0';
         currentPreviousHistory = result.previousHistory || [];
         currentPreviousManifestId = result.previousManifestId || null;
         currentPreviousBackupNumber = result.previousBackupNumber ?? null;
         currentPreviousEncryptionIVs = result.previousEncryptionIVs || {};
+        
         if (currentFiles.length === 0) {
             setStatus(t('no-changes'));
             button.disabled = false;
@@ -495,14 +480,15 @@ async function prepareBackup() {
             button.onclick = prepareBackup;
             return;
         }
+        
         const totalBytes = result.totalBytes || 0;
         const sizeText = formatFileSize(totalBytes);
         setStatus(
             `${t('files-count')}: ${currentFiles.length}\n` +
             `${t('files-size')}: ${sizeText}\n` +
-            `${t('file-cost')}: ${currentFileCostEth} Base ETH\n` +
-            `${t('manifest-cost')}: ${t('preparing')}`
+            `${t('file-cost')}: ${t('preparing')}`
         );
+        
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
         button.onclick = executeZipUpload;
@@ -556,40 +542,32 @@ async function executeZipUpload() {
         currentMerkleRoot = calculateMerkleRoot(files);
         currentFileMetadata = files.map(file => ({ path: file.path, hash: file.hash }));
         
-        let filePaymentTxHash = null;
-        const initialCostWei = ethers.parseEther(currentFileCostEth || '0');
-        
-        if (initialCostWei > 0n && !hasDepositedFiles) {
-            setStatus(`${t('deposit-files')}: ${currentFileCostEth} Base ETH...`);
-            button.textContent = '⏳';
-            const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: initialCostWei });
-            setStatus(t('waiting'));
-            await tx.wait();
-            filePaymentTxHash = tx.hash;
-            setStatus(t('success'));
-            hasDepositedFiles = true;
-        }
-        
         setStatus(t('uploading'));
         
-        const executeResult = await uploadZipBinary({
+        // PIRMAIS MĒĢINĀJUMS — bez paymentTxHash
+        const firstResult = await uploadZipBinary({
             jobId: currentJobId,
             encryptedZip: encryptedZipData,
             iv: currentIV,
-            fileMetadata: currentFileMetadata,
-            paymentTxHash: filePaymentTxHash
+            fileMetadata: currentFileMetadata
         });
         
-        if (executeResult.paymentRequired) {
-            currentFileCostEth = executeResult.requiredPaymentEth || '0';
+        if (firstResult.paymentRequired) {
+            // Serveris prasa maksājumu
+            currentFileCostEth = firstResult.requiredPaymentEth || '0';
             const requiredWei = ethers.parseEther(currentFileCostEth);
             if (requiredWei <= 0n) throw new Error('Serveris pieprasīja maksājumu ar nulles summu.');
+            
             setStatus(`${t('deposit-files')}: ${currentFileCostEth} Base ETH...`);
+            button.textContent = '⏳';
+            
             const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: requiredWei });
             setStatus(t('waiting'));
             await tx.wait();
             hasDepositedFiles = true;
             
+            // OTRAIS MĒĢINĀJUMS — ar paymentTxHash
+            setStatus(t('uploading'));
             const retryResult = await uploadZipBinary({
                 jobId: currentJobId,
                 encryptedZip: encryptedZipData,
@@ -597,10 +575,11 @@ async function executeZipUpload() {
                 fileMetadata: currentFileMetadata,
                 paymentTxHash: tx.hash
             });
+            
             if (!retryResult.success) throw new Error(retryResult.error || 'ZIP augšupielāde neizdevās.');
             currentZipTxId = retryResult.zipTxId;
         } else {
-            currentZipTxId = executeResult.zipTxId;
+            currentZipTxId = firstResult.zipTxId;
         }
         
         document.getElementById('status').textContent = `${t('zip-uploaded')}\n\n${t('manifest-cost')}: ${t('preparing')}`;
@@ -617,7 +596,7 @@ async function executeZipUpload() {
     }
 }
 
-async function uploadZipBinary({ jobId, encryptedZip, iv, fileMetadata, paymentTxHash }) {
+async function uploadZipBinary({ jobId, encryptedZip, iv, fileMetadata, paymentTxHash = null }) {
     const formData = new FormData();
     formData.append('jobId', jobId);
     formData.append('iv', JSON.stringify(Array.from(iv)));
@@ -657,7 +636,11 @@ async function finalizeManifest(zipTxId, button) {
         if (manifestResult.paymentRequired) {
             currentManifestPayload = manifestResult.manifest;
             currentManifestCostEth = manifestResult.requiredPaymentEth || '0';
-            const manifestSize = JSON.stringify(manifestResult.manifest).length;
+            
+            // UTF-8 byte count
+            const manifestBytes = new TextEncoder().encode(JSON.stringify(manifestResult.manifest));
+            const manifestSize = manifestBytes.length;
+            
             document.getElementById('status').textContent =
                 `${t('manifest-ready')}\n\n` +
                 `${t('manifest-size')}: ${formatFileSize(manifestSize)}\n` +
@@ -692,7 +675,10 @@ async function finalizeManifest(zipTxId, button) {
         if (!manifestResult.success) throw new Error(manifestResult.error || 'Manifesta kļūda.');
         currentManifestCostEth = manifestResult.manifestCostEth || '0';
         currentManifestPayload = manifestResult.manifest || currentManifestPayload;
-        const manifestSize = JSON.stringify(currentManifestPayload || {}).length;
+        
+        const manifestBytes = new TextEncoder().encode(JSON.stringify(currentManifestPayload || {}));
+        const manifestSize = manifestBytes.length;
+        
         document.getElementById('status').textContent =
             `${t('manifest-ready')}\n\n` +
             `${t('manifest-size')}: ${formatFileSize(manifestSize)}\n` +
