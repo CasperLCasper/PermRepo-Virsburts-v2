@@ -140,49 +140,27 @@ h1 {
 }
 .repo-select option { background: #161b22; color: var(--text); padding: 12px; }
 
-/* STATUS APLĪŠI */
-.status-dot {
+/* APLĪŠI IZKRĪTOŠAJĀ IZVĒLNĒ */
+.repo-option-nft::before {
+    content: '';
     display: inline-block;
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    margin-right: 6px;
-    animation: pulse-dot 2s ease-in-out infinite;
-}
-
-.status-dot.green {
     background: var(--green);
+    margin-right: 8px;
     box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
-}
-
-.status-dot.red {
-    background: var(--red);
-    box-shadow: 0 0 8px rgba(248, 81, 73, 0.6);
-}
-
-@keyframes pulse-dot {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.8); }
-}
-
-.repo-option-nft::before {
-    content: '';
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--green);
-    margin-right: 6px;
 }
 
 .repo-option-no-nft::before {
     content: '';
     display: inline-block;
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: var(--red);
-    margin-right: 6px;
+    margin-right: 8px;
+    box-shadow: 0 0 8px rgba(248, 81, 73, 0.6);
 }
 
 /* Repo status paziņojums */
@@ -199,29 +177,55 @@ h1 {
     background: rgba(63, 185, 80, 0.08);
     border: 1px solid rgba(63, 185, 80, 0.2);
 }
+.repo-status-display.has-nft::before {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--green);
+    margin-right: 8px;
+    box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
+}
 .repo-status-display.no-nft {
     background: rgba(248, 81, 73, 0.08);
     border: 1px solid rgba(248, 81, 73, 0.2);
 }
+.repo-status-display.no-nft::before {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--red);
+    margin-right: 8px;
+    box-shadow: 0 0 8px rgba(248, 81, 73, 0.6);
+}
 
-/* Abonementa indikators */
+/* Abonementa indikators — SPILGTS MIRGOJOŠS */
 .subscription-dot {
     display: inline-block;
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
-    margin-right: 8px;
-    animation: pulse-dot 1.5s ease-in-out infinite;
+    margin-right: 10px;
+    animation: pulse-dot 1.2s ease-in-out infinite;
 }
 
 .subscription-dot.active {
-    background: var(--green);
-    box-shadow: 0 0 12px rgba(63, 185, 80, 0.7);
+    background: #4ade80;
+    box-shadow: 
+        0 0 20px rgba(74, 222, 128, 1),
+        0 0 40px rgba(74, 222, 128, 0.7),
+        0 0 60px rgba(74, 222, 128, 0.4);
 }
 
 .subscription-dot.expired {
-    background: var(--red);
-    box-shadow: 0 0 12px rgba(248, 81, 73, 0.7);
+    background: #ff6b64;
+    box-shadow: 
+        0 0 20px rgba(255, 107, 100, 1),
+        0 0 40px rgba(255, 107, 100, 0.7),
+        0 0 60px rgba(255, 107, 100, 0.4);
 }
 
 /* Pogas — ZAĻĀ KRĀSĀ */
@@ -315,7 +319,7 @@ button.logout-button:hover {
 
 @keyframes pulse-dot {
     0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.8); }
+    50% { opacity: 0.3; transform: scale(0.6); }
 }
 
 /* LINKI */
