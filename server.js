@@ -57,7 +57,7 @@ const MAX_REPO_FILES = Number(process.env.MAX_REPO_FILES || 5000);
 const MAX_REPO_BYTES = Number(process.env.MAX_REPO_BYTES || 524288000);
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES || 104857600);
 const JOB_TTL_SECONDS = Number(process.env.JOB_TTL_SECONDS || 3600);
-const DOWNLOAD_CONCURRENCY = 10;
+const DOWNLOAD_CONCURRENCY = 3;
 
 if (!SESSION_SECRET) {
     throw new Error('SESSION_SECRET nav iestatīts!');
