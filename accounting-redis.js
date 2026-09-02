@@ -6,73 +6,31 @@
 // 1. lietotāju Winc kredītu bilancēm;
 // 2. Treasury payment tx claim aizsardzībai;
 // 3. backup job stāvoklim;
-// 4. atomiskai kredītu rezervēšanai/atgriešanai.
-//
-// Svarīgi:
-// - Frontend NEKAD nav autoritatīvs kredītu bilancei.
-// - Frontend NEKAD nav autoritatīvs Turbo cenai.
-// - Kredītu debitēšana notiek Redis atomiskā Lua skriptā.
-// - Payment tx var tikt claimots tikai vienu reizi.
-// - Backup job ir servera pusē un tam ir TTL.
+// 4. atomiskai kredītu rezervēšanai/atgriešanai;
+// 5. izkliedētajai job slēdzenei (distributed lock).
 
 import { Redis } from '@upstash/redis';
+import crypto from 'crypto';
 
 let redis = null;
 
-const DEFAULT_JOB_TTL =
-    Number(
-        process.env.JOB_TTL_SECONDS ||
-        3600
-    );
-
-const PAYMENT_TTL =
-    Number(
-        process.env.PAYMENT_CLAIM_TTL_SECONDS ||
-        86400 * 30
-    );
+const DEFAULT_JOB_TTL = Number(process.env.JOB_TTL_SECONDS || 3600);
+const PAYMENT_TTL = Number(process.env.PAYMENT_CLAIM_TTL_SECONDS || 86400 * 30);
+const JOB_LOCK_TTL = Number(process.env.JOB_LOCK_TTL_SECONDS || 30);
 
 function normalizeWallet(walletAddress) {
-    if (
-        typeof walletAddress !==
-        'string'
-    ) {
-        throw new Error(
-            'Wallet address nav string.'
-        );
-    }
-
-    const normalized =
-        walletAddress
-            .trim()
-            .toLowerCase();
-
-    if (
-        !/^0x[0-9a-f]{40}$/.test(
-            normalized
-        )
-    ) {
-        throw new Error(
-            'Nederīga wallet address.'
-        );
-    }
-
+    if (typeof walletAddress !== 'string') throw new Error('Wallet address nav string.');
+    const normalized = walletAddress.trim().toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(normalized)) throw new Error('Nederīga wallet address.');
     return normalized;
 }
 
 function creditsKey(walletAddress) {
-    return (
-        `user:${normalizeWallet(
-            walletAddress
-        )}:winc`
-    );
+    return `user:${normalizeWallet(walletAddress)}:winc`;
 }
 
 function depositsKey(walletAddress) {
-    return (
-        `user:${normalizeWallet(
-            walletAddress
-        )}:deposits`
-    );
+    return `user:${normalizeWallet(walletAddress)}:deposits`;
 }
 
 function jobKey(jobId) {
@@ -80,674 +38,242 @@ function jobKey(jobId) {
 }
 
 function paymentKey(txHash) {
-    if (
-        typeof txHash !==
-            'string' ||
-        !/^0x[0-9a-fA-F]{64}$/.test(
-            txHash
-        )
-    ) {
-        throw new Error(
-            'Nederīgs payment tx hash.'
-        );
-    }
-
-    return (
-        `permrepo:payment:${txHash.toLowerCase()}`
-    );
+    if (typeof txHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) throw new Error('Nederīgs payment tx hash.');
+    return `permrepo:payment:${txHash.toLowerCase()}`;
 }
 
-/**
- * Inicializē Redis.
- */
+function jobLockKey(jobId) {
+    return `permrepo:joblock:${jobId}`;
+}
+
 export function initRedis() {
-    if (
-        !redis &&
-        process.env.UPSTASH_REDIS_REST_URL &&
-        process.env.UPSTASH_REDIS_REST_TOKEN
-    ) {
-        redis =
-            new Redis({
-                url:
-                    process.env
-                        .UPSTASH_REDIS_REST_URL,
-
-                token:
-                    process.env
-                        .UPSTASH_REDIS_REST_TOKEN
-            });
-
-        console.log(
-            '✅ Redis inicializēts | Redis initialized'
-        );
+    if (!redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+        redis = new Redis({
+            url: process.env.UPSTASH_REDIS_REST_URL,
+            token: process.env.UPSTASH_REDIS_REST_TOKEN
+        });
+        console.log('✅ Redis inicializēts | Redis initialized');
     } else if (!redis) {
-        console.log(
-            '⚠️ Redis nav konfigurēts | Redis is not configured'
-        );
+        console.log('⚠️ Redis nav konfigurēts | Redis is not configured');
     }
-
     return redis;
 }
 
-/**
- * Atgriež Redis klientu.
- */
 export function getRedis() {
     return redis;
 }
 
-/**
- * Pārbauda, vai Redis ir pieejams.
- */
 function requireRedis() {
-    if (!redis) {
-        throw new Error(
-            'Redis nav konfigurēts. PermRepo grāmatvedības operācija nav pieejama.'
-        );
-    }
-
+    if (!redis) throw new Error('Redis nav konfigurēts. PermRepo grāmatvedības operācija nav pieejama.');
     return redis;
 }
 
-/**
- * Droši pārvērš Redis vērtību BigInt.
- */
 function parseBigInt(value) {
-    if (
-        value === null ||
-        value === undefined ||
-        value === ''
-    ) {
-        return 0n;
-    }
-
+    if (value === null || value === undefined || value === '') return 0n;
     try {
-        const parsed =
-            BigInt(String(value));
-
-        if (parsed < 0n) {
-            throw new Error(
-                'Negatīva Redis bilance.'
-            );
-        }
-
+        const parsed = BigInt(String(value));
+        if (parsed < 0n) throw new Error('Negatīva Redis bilance.');
         return parsed;
     } catch {
-        throw new Error(
-            'Redis bilance satur nederīgu skaitli.'
-        );
+        throw new Error('Redis bilance satur nederīgu skaitli.');
     }
 }
 
-/**
- * Iegūst lietotāja Winc kredītu bilanci.
- */
-export async function getUserCredits(
-    walletAddress
-) {
-    const client =
-        requireRedis();
-
-    const key =
-        creditsKey(walletAddress);
-
+export async function getUserCredits(walletAddress) {
+    const client = requireRedis();
+    const key = creditsKey(walletAddress);
     try {
-        const value =
-            await client.get(key);
-
+        const value = await client.get(key);
         return parseBigInt(value);
     } catch (error) {
-        console.warn(
-            'Redis get kļūda | Redis get error:',
-            error.message
-        );
-
-        throw new Error(
-            'Redis kredītu nolasīšana neizdevās.'
-        );
+        console.warn('Redis get kļūda | Redis get error:', error.message);
+        throw new Error('Redis kredītu nolasīšana neizdevās.');
     }
 }
 
-/**
- * Iestata lietotāja kredītu bilanci.
- *
- * Šo funkciju izmanto tikai:
- * - administratīvai/iekšējai korekcijai;
- * - migrācijai;
- * - manuālai grāmatvedībai.
- *
- * Parastai debitēšanai izmanto reserveUserCredits().
- */
-export async function setUserCredits(
-    walletAddress,
-    wincAmount
-) {
-    const client =
-        requireRedis();
-
-    const amount =
-        parseBigInt(
-            wincAmount
-        );
-
+export async function setUserCredits(walletAddress, wincAmount) {
+    const client = requireRedis();
+    const amount = parseBigInt(wincAmount);
     try {
-        await client.set(
-            creditsKey(
-                walletAddress
-            ),
-            amount.toString()
-        );
-
-        console.log(
-            '✅ Lietotāja kredīti atjaunināti | User credits updated:',
-            amount.toString()
-        );
+        await client.set(creditsKey(walletAddress), amount.toString());
+        console.log('✅ Lietotāja kredīti atjaunināti | User credits updated:', amount.toString());
     } catch (error) {
-        console.warn(
-            'Redis set kļūda | Redis set error:',
-            error.message
-        );
-
-        throw new Error(
-            'Redis kredītu atjaunināšana neizdevās.'
-        );
+        console.warn('Redis set kļūda | Redis set error:', error.message);
+        throw new Error('Redis kredītu atjaunināšana neizdevās.');
     }
 }
 
-/**
- * Atomiski rezervē / atskaita Winc kredītus.
- *
- * Lua skripts nodrošina:
- *
- * if balance >= amount:
- *     balance = balance - amount
- *     return 1
- *
- * else:
- *     return 0
- *
- * Tādējādi divi vienlaicīgi backup requesti
- * nevar abus iztērēt vienu un to pašu bilanci.
- */
-export async function reserveUserCredits(
-    walletAddress,
-    wincAmount
-) {
-    const client =
-        requireRedis();
-
-    const amount =
-        parseBigInt(
-            wincAmount
-        );
-
-    if (amount <= 0n) {
-        return true;
-    }
-
-    const key =
-        creditsKey(
-            walletAddress
-        );
-
+export async function reserveUserCredits(walletAddress, wincAmount) {
+    const client = requireRedis();
+    const amount = parseBigInt(wincAmount);
+    if (amount <= 0n) return true;
+    const key = creditsKey(walletAddress);
     const script = `
-        local current = redis.call(
-            "GET",
-            KEYS[1]
-        )
-
-        if not current then
-            current = "0"
-        end
-
+        local current = redis.call("GET", KEYS[1])
+        if not current then current = "0" end
         local balance = tonumber(current)
         local required = tonumber(ARGV[1])
-
         if balance >= required then
-            redis.call(
-                "SET",
-                KEYS[1],
-                tostring(balance - required)
-            )
-
+            redis.call("SET", KEYS[1], tostring(balance - required))
             return 1
         end
-
         return 0
     `;
-
     try {
-        const result =
-            await client.eval(
-                script,
-                [key],
-                [amount.toString()]
-            );
-
+        const result = await client.eval(script, [key], [amount.toString()]);
         return Number(result) === 1;
     } catch (error) {
-        console.warn(
-            'Redis reserve kļūda | Redis reserve error:',
-            error.message
-        );
-
-        throw new Error(
-            'Redis kredītu rezervēšana neizdevās.'
-        );
+        console.warn('Redis reserve kļūda | Redis reserve error:', error.message);
+        throw new Error('Redis kredītu rezervēšana neizdevās.');
     }
 }
 
-/**
- * Atomiski atgriež Winc kredītus.
- *
- * Izmanto tikai pēc neveiksmīga Turbo upload,
- * ja kredīti tika rezervēti.
- */
-export async function refundUserCredits(
-    walletAddress,
-    wincAmount
-) {
-    const client =
-        requireRedis();
-
-    const amount =
-        parseBigInt(
-            wincAmount
-        );
-
-    if (amount <= 0n) {
-        return;
-    }
-
-    const key =
-        creditsKey(
-            walletAddress
-        );
-
+export async function refundUserCredits(walletAddress, wincAmount) {
+    const client = requireRedis();
+    const amount = parseBigInt(wincAmount);
+    if (amount <= 0n) return;
+    const key = creditsKey(walletAddress);
     const script = `
-        local current = redis.call(
-            "GET",
-            KEYS[1]
-        )
-
-        if not current then
-            current = "0"
-        end
-
+        local current = redis.call("GET", KEYS[1])
+        if not current then current = "0" end
         local balance = tonumber(current)
         local refund = tonumber(ARGV[1])
-
-        redis.call(
-            "SET",
-            KEYS[1],
-            tostring(balance + refund)
-        )
-
+        redis.call("SET", KEYS[1], tostring(balance + refund))
         return 1
     `;
-
     try {
-        await client.eval(
-            script,
-            [key],
-            [amount.toString()]
-        );
-
-        console.log(
-            '↩️ Redis kredīti atgriezti | Credits refunded:',
-            amount.toString()
-        );
+        await client.eval(script, [key], [amount.toString()]);
+        console.log('↩️ Redis kredīti atgriezti | Credits refunded:', amount.toString());
     } catch (error) {
-        console.error(
-            'KRITISKA Redis refund kļūda:',
-            error
-        );
-
-        throw new Error(
-            'Redis kredītu atgriešana neizdevās.'
-        );
+        console.error('KRITISKA Redis refund kļūda:', error);
+        throw new Error('Redis kredītu atgriešana neizdevās.');
     }
 }
 
-/**
- * Iegūst lietotāja Treasury deposit bilanci.
- *
- * Šī bilance nav automātiski tas pats,
- * kas Treasury smart-contract balance.
- */
-export async function getUserDeposits(
-    walletAddress
-) {
-    const client =
-        requireRedis();
-
+export async function getUserDeposits(walletAddress) {
+    const client = requireRedis();
     try {
-        const value =
-            await client.get(
-                depositsKey(
-                    walletAddress
-                )
-            );
-
+        const value = await client.get(depositsKey(walletAddress));
         return parseBigInt(value);
     } catch (error) {
-        console.warn(
-            'Redis deposit get kļūda:',
-            error.message
-        );
-
-        throw new Error(
-            'Redis deposit nolasīšana neizdevās.'
-        );
+        console.warn('Redis deposit get kļūda:', error.message);
+        throw new Error('Redis deposit nolasīšana neizdevās.');
     }
 }
 
-/**
- * Iestata lietotāja deposit bilanci.
- */
-export async function setUserDeposits(
-    walletAddress,
-    depositAmount
-) {
-    const client =
-        requireRedis();
-
-    const amount =
-        parseBigInt(
-            depositAmount
-        );
-
+export async function setUserDeposits(walletAddress, depositAmount) {
+    const client = requireRedis();
+    const amount = parseBigInt(depositAmount);
     try {
-        await client.set(
-            depositsKey(
-                walletAddress
-            ),
-            amount.toString()
-        );
-
-        console.log(
-            '✅ Lietotāja iemaksas atjauninātas | User deposits updated:',
-            amount.toString()
-        );
+        await client.set(depositsKey(walletAddress), amount.toString());
+        console.log('✅ Lietotāja iemaksas atjauninātas | User deposits updated:', amount.toString());
     } catch (error) {
-        console.warn(
-            'Redis deposit set kļūda:',
-            error.message
-        );
-
-        throw new Error(
-            'Redis deposit atjaunināšana neizdevās.'
-        );
+        console.warn('Redis deposit set kļūda:', error.message);
+        throw new Error('Redis deposit atjaunināšana neizdevās.');
     }
 }
 
-/**
- * Izveido backup job.
- *
- * Job dati atrodas servera pusē.
- * Frontend saņem tikai nejaušu jobId.
- */
-export async function createJob(
-    jobId,
-    job,
-    ttlSeconds = DEFAULT_JOB_TTL
-) {
-    const client =
-        requireRedis();
-
-    if (
-        typeof jobId !== 'string' ||
-        jobId.length < 20
-    ) {
-        throw new Error(
-            'Nederīgs jobId.'
-        );
-    }
-
-    if (
-        !job ||
-        typeof job !== 'object'
-    ) {
-        throw new Error(
-            'Nederīgi job dati.'
-        );
-    }
-
-    const ttl =
-        Number(ttlSeconds);
-
-    if (
-        !Number.isInteger(ttl) ||
-        ttl <= 0
-    ) {
-        throw new Error(
-            'Nederīgs job TTL.'
-        );
-    }
-
-    const key =
-        jobKey(jobId);
-
-    const value =
-        JSON.stringify(
-            job
-        );
-
+export async function createJob(jobId, job, ttlSeconds = DEFAULT_JOB_TTL) {
+    const client = requireRedis();
+    if (typeof jobId !== 'string' || jobId.length < 20) throw new Error('Nederīgs jobId.');
+    if (!job || typeof job !== 'object') throw new Error('Nederīgi job dati.');
+    const ttl = Number(ttlSeconds);
+    if (!Number.isInteger(ttl) || ttl <= 0) throw new Error('Nederīgs job TTL.');
+    const key = jobKey(jobId);
+    const value = JSON.stringify(job);
     try {
-        const result =
-            await client.set(
-                key,
-                value,
-                {
-                    nx: true,
-                    ex: ttl
-                }
-            );
-
-        if (result !== 'OK') {
-            throw new Error(
-                'Job ar šādu ID jau eksistē.'
-            );
-        }
-
+        const result = await client.set(key, value, { nx: true, ex: ttl });
+        if (result !== 'OK') throw new Error('Job ar šādu ID jau eksistē.');
         return true;
     } catch (error) {
-        console.error(
-            'Redis createJob kļūda:',
-            error
-        );
-
-        throw new Error(
-            'Backup job izveide neizdevās.'
-        );
+        console.error('Redis createJob kļūda:', error);
+        throw new Error('Backup job izveide neizdevās.');
     }
 }
 
-/**
- * Iegūst backup job.
- */
-export async function getJob(
-    jobId
-) {
-    const client =
-        requireRedis();
-
-    if (
-        typeof jobId !== 'string' ||
-        jobId.length < 20
-    ) {
-        throw new Error(
-            'Nederīgs jobId.'
-        );
-    }
-
+export async function getJob(jobId) {
+    const client = requireRedis();
+    if (typeof jobId !== 'string' || jobId.length < 20) throw new Error('Nederīgs jobId.');
     try {
-        const value =
-            await client.get(
-                jobKey(jobId)
-            );
-
-        if (!value) {
-            return null;
-        }
-
-        if (
-            typeof value ===
-            'object'
-        ) {
-            return value;
-        }
-
-        return JSON.parse(
-            String(value)
-        );
+        const value = await client.get(jobKey(jobId));
+        if (!value) return null;
+        if (typeof value === 'object') return value;
+        return JSON.parse(String(value));
     } catch (error) {
-        console.error(
-            'Redis getJob kļūda:',
-            error
-        );
-
-        throw new Error(
-            'Backup job nolasīšana neizdevās.'
-        );
+        console.error('Redis getJob kļūda:', error);
+        throw new Error('Backup job nolasīšana neizdevās.');
     }
 }
 
-/**
- * Atjaunina backup job.
- *
- * Tiek izmantots Redis GET + SET,
- * bet job request serializāciju papildus
- * nodrošina servera procesa withJobLock().
- *
- * Kritiskās finanšu operācijas
- * NETIEK veiktas ar šo funkciju.
- */
-export async function updateJob(
-    jobId,
-    patch,
-    ttlSeconds = DEFAULT_JOB_TTL
-) {
-    const client =
-        requireRedis();
-
-    const current =
-        await getJob(jobId);
-
-    if (!current) {
-        throw new Error(
-            'Backup job nav atrasts.'
-        );
-    }
-
-    const next = {
-        ...current,
-        ...patch,
-        updatedAt:
-            Date.now()
-    };
-
-    await client.set(
-        jobKey(jobId),
-        JSON.stringify(next),
-        {
-            ex:
-                Number(ttlSeconds)
-        }
-    );
-
+export async function updateJob(jobId, patch, ttlSeconds = DEFAULT_JOB_TTL) {
+    const client = requireRedis();
+    const current = await getJob(jobId);
+    if (!current) throw new Error('Backup job nav atrasts.');
+    const next = { ...current, ...patch, updatedAt: Date.now() };
+    await client.set(jobKey(jobId), JSON.stringify(next), { ex: Number(ttlSeconds) });
     return next;
 }
 
-/**
- * Claimo payment transaction.
- *
- * Payment tx hash ir globāli vienreizējs:
- * viens tx nevar tikt izmantots diviem
- * dažādiem backup posmiem.
- *
- * Redis SET NX nodrošina atomisku claim.
- */
-export async function claimPaymentTx(
-    txHash,
-    metadata = {}
-) {
-    const client =
-        requireRedis();
-
-    const key =
-        paymentKey(txHash);
-
-    const value =
-        JSON.stringify({
-            txHash,
-            ...metadata,
-            claimedAt:
-                Date.now()
-        });
-
+export async function claimPaymentTx(txHash, metadata = {}) {
+    const client = requireRedis();
+    const key = paymentKey(txHash);
+    const value = JSON.stringify({ txHash, ...metadata, claimedAt: Date.now() });
     try {
-        const result =
-            await client.set(
-                key,
-                value,
-                {
-                    nx: true,
-                    ex:
-                        PAYMENT_TTL
-                }
-            );
-
+        const result = await client.set(key, value, { nx: true, ex: PAYMENT_TTL });
         return result === 'OK';
     } catch (error) {
-        console.error(
-            'Redis payment claim kļūda:',
-            error
-        );
-
-        throw new Error(
-            'Payment tx reģistrācija neizdevās.'
-        );
+        console.error('Redis payment claim kļūda:', error);
+        throw new Error('Payment tx reģistrācija neizdevās.');
     }
 }
 
-/**
- * Nolasa payment claim informāciju.
- */
-export async function getPaymentClaim(
-    txHash
-) {
-    const client =
-        requireRedis();
-
+export async function getPaymentClaim(txHash) {
+    const client = requireRedis();
     try {
-        const value =
-            await client.get(
-                paymentKey(txHash)
-            );
-
-        if (!value) {
-            return null;
-        }
-
-        if (
-            typeof value ===
-            'object'
-        ) {
-            return value;
-        }
-
-        return JSON.parse(
-            String(value)
-        );
+        const value = await client.get(paymentKey(txHash));
+        if (!value) return null;
+        if (typeof value === 'object') return value;
+        return JSON.parse(String(value));
     } catch (error) {
-        console.error(
-            'Redis payment get kļūda:',
-            error
-        );
+        console.error('Redis payment get kļūda:', error);
+        throw new Error('Payment claim nolasīšana neizdevās.');
+    }
+}
 
-        throw new Error(
-            'Payment claim nolasīšana neizdevās.'
-        );
+// ==================================================
+// IZKLIEDĒTĀ JOB SLĒDZENE (DISTRIBUTED LOCK)
+// ==================================================
+
+export async function acquireJobLock(jobId, ttlSeconds = JOB_LOCK_TTL) {
+    const client = requireRedis();
+    const key = jobLockKey(jobId);
+    const token = crypto.randomUUID();
+    const ttl = Number(ttlSeconds);
+    if (!Number.isInteger(ttl) || ttl <= 0) throw new Error('Nederīgs job lock TTL.');
+    try {
+        const result = await client.set(key, token, { nx: true, ex: ttl });
+        if (result === 'OK') return token;
+        return null;
+    } catch (error) {
+        console.error('Redis job lock iegūšanas kļūda:', error);
+        throw new Error('Redis job slēdzeni nevar iegūt.');
+    }
+}
+
+export async function releaseJobLock(jobId, token) {
+    const client = requireRedis();
+    const key = jobLockKey(jobId);
+    const script = `
+        local current = redis.call("GET", KEYS[1])
+        if current == ARGV[1] then
+            redis.call("DEL", KEYS[1])
+            return 1
+        end
+        return 0
+    `;
+    try {
+        await client.eval(script, [key], [token]);
+    } catch (error) {
+        console.error('Redis job lock atbrīvošanas kļūda:', error);
     }
 }
