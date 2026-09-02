@@ -485,8 +485,7 @@ async function prepareBackup() {
         const sizeText = formatFileSize(totalBytes);
         setStatus(
             `${t('files-count')}: ${currentFiles.length}\n` +
-            `${t('files-size')}: ${sizeText}\n` +
-            `${t('file-cost')}: ${t('preparing')}`
+            `${t('files-size')}: ${sizeText}`
         );
         
         button.disabled = false;
@@ -544,7 +543,6 @@ async function executeZipUpload() {
         
         setStatus(t('uploading'));
         
-        // PIRMAIS MĒĢINĀJUMS — bez paymentTxHash
         const firstResult = await uploadZipBinary({
             jobId: currentJobId,
             encryptedZip: encryptedZipData,
@@ -553,7 +551,6 @@ async function executeZipUpload() {
         });
         
         if (firstResult.paymentRequired) {
-            // Serveris prasa maksājumu
             currentFileCostEth = firstResult.requiredPaymentEth || '0';
             const requiredWei = ethers.parseEther(currentFileCostEth);
             if (requiredWei <= 0n) throw new Error('Serveris pieprasīja maksājumu ar nulles summu.');
@@ -566,7 +563,6 @@ async function executeZipUpload() {
             await tx.wait();
             hasDepositedFiles = true;
             
-            // OTRAIS MĒĢINĀJUMS — ar paymentTxHash
             setStatus(t('uploading'));
             const retryResult = await uploadZipBinary({
                 jobId: currentJobId,
@@ -582,7 +578,7 @@ async function executeZipUpload() {
             currentZipTxId = firstResult.zipTxId;
         }
         
-        document.getElementById('status').textContent = `${t('zip-uploaded')}\n\n${t('manifest-cost')}: ${t('preparing')}`;
+        document.getElementById('status').textContent = t('zip-uploaded');
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
         button.onclick = () => finalizeManifest(currentZipTxId, button);
@@ -637,7 +633,6 @@ async function finalizeManifest(zipTxId, button) {
             currentManifestPayload = manifestResult.manifest;
             currentManifestCostEth = manifestResult.requiredPaymentEth || '0';
             
-            // UTF-8 byte count
             const manifestBytes = new TextEncoder().encode(JSON.stringify(manifestResult.manifest));
             const manifestSize = manifestBytes.length;
             
