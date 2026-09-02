@@ -154,20 +154,14 @@ h1 {
     background: linear-gradient(135deg, rgba(63, 185, 80, 0.15) 0%, rgba(46, 160, 67, 0.1) 100%);
     color: #3fb950;
     border: 2px solid #3fb950;
-    box-shadow: 
-        0 4px 12px rgba(63, 185, 80, 0.15),
-        inset 0 1px 0 rgba(63, 185, 80, 0.1);
 }
 .repo-status-display.no-nft {
     background: linear-gradient(135deg, rgba(248, 81, 73, 0.15) 0%, rgba(218, 54, 51, 0.1) 100%);
     color: #f85149;
     border: 2px solid #f85149;
-    box-shadow: 
-        0 4px 12px rgba(248, 81, 73, 0.15),
-        inset 0 1px 0 rgba(248, 81, 73, 0.1);
 }
 
-/* VISAS POGAS ar bagātīgiem gradientiem */
+/* VISAS POGAS */
 button { 
     width: 100%; 
     padding: 14px; 
@@ -195,17 +189,12 @@ button::before {
     transition: left 0.5s;
 }
 
-button:hover::before {
-    left: 100%;
-}
+button:hover::before { left: 100%; }
 
 button:hover { 
     background: linear-gradient(135deg, #2ea043 0%, #238636 50%, #2ea043 100%); 
     transform: translateY(-2px);
-    box-shadow: 
-        0 4px 12px rgba(35, 134, 54, 0.3),
-        0 8px 24px rgba(35, 134, 54, 0.2);
-    border-color: rgba(63, 185, 80, 0.5);
+    box-shadow: 0 4px 12px rgba(35, 134, 54, 0.3);
 }
 
 button:disabled { 
@@ -214,134 +203,46 @@ button:disabled {
     cursor: not-allowed; 
     transform: none;
     box-shadow: none;
-    border-color: rgba(139, 148, 158, 0.2);
 }
 
 button.sign-button { padding: 20px; font-size: 20px; }
 
-/* Backup poga — ZAĻA */
 button.backup-button {
     background: linear-gradient(135deg, #1a7f37 0%, #238636 25%, #2ea043 50%, #238636 75%, #1a7f37 100%);
-    color: #ffffff;
     border: 2px solid #3fb950;
-    box-shadow: 
-        0 4px 12px rgba(63, 185, 80, 0.4),
-        0 8px 24px rgba(63, 185, 80, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-button.backup-button:hover {
-    background: linear-gradient(135deg, #238636 0%, #2ea043 25%, #3fb950 50%, #2ea043 75%, #238636 100%);
-    transform: translateY(-2px);
-    box-shadow: 
-        0 6px 16px rgba(63, 185, 80, 0.5),
-        0 12px 32px rgba(63, 185, 80, 0.3);
-    border-color: #2ea043;
 }
 
-/* Logout poga — SARKANS teksts */
-button.logout-button { 
-    background: linear-gradient(135deg, #21262d 0%, #30363d 50%, #21262d 100%); 
-    color: #f85149; 
-    padding: 10px; 
-    font-size: 14px; 
-    margin-top: 8px;
-    border-color: rgba(248, 81, 73, 0.2);
-    font-weight: 700;
-}
-button.logout-button:hover {
-    background: linear-gradient(135deg, #30363d 0%, #3d444d 50%, #30363d 100%);
-    color: #ff6b64;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(248, 81, 73, 0.15);
-}
-
-/* Abonementa poga */
-.subscription-button { 
-    padding: 18px; 
-    font-size: 20px; 
-    font-weight: 700;
-    margin-top: 8px; 
-    color: #ffffff;
-    letter-spacing: 0.5px;
-}
-.subscription-button.active { 
-    background: linear-gradient(135deg, #1a7f37 0%, #238636 30%, #2ea043 50%, #238636 70%, #1a7f37 100%); 
-    color: #ffffff;
-    border: 2px solid #3fb950;
-    box-shadow: 
-        0 4px 12px rgba(63, 185, 80, 0.3),
-        0 8px 24px rgba(63, 185, 80, 0.15),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-.subscription-button.inactive { 
-    background: linear-gradient(135deg, #f85149 0%, #da3633 30%, #f85149 50%, #da3633 70%, #f85149 100%); 
-    color: #ffffff;
-    border: 2px solid #f85149;
-    box-shadow: 
-        0 4px 12px rgba(248, 81, 73, 0.3),
-        0 8px 24px rgba(248, 81, 73, 0.15),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-.subscription-button.inactive:hover {
-    background: linear-gradient(135deg, #da3633 0%, #b62324 30%, #da3633 50%, #b62324 70%, #da3633 100%);
-    transform: translateY(-2px);
-    box-shadow: 
-        0 6px 16px rgba(248, 81, 73, 0.4),
-        0 12px 32px rgba(248, 81, 73, 0.2);
-}
-
-/* STATUSA KARTĪTE — VIENKĀRŠS UN TĪRS */
+/* STATUSA KARTĪTE — JAUNAIS STILS */
 .status-card {
     margin-top: 20px;
-    padding: 16px;
-    border-radius: 8px;
+    padding: 20px 24px;
+    border-radius: 12px;
     text-align: center;
-    font-size: 15px;
-    line-height: 1.5;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
-    border: 1px solid #30363d;
-    background: rgba(255, 255, 255, 0.02);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     color: #ffffff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .status-card .status-icon {
     display: none;
 }
 
-.status-card.success,
-.status-card.error,
-.status-card.progress {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid #30363d;
-    color: #ffffff;
-}
-
 .status-card .amount {
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-weight: 700;
-    font-size: 18px;
+    font-size: 20px;
     color: #f0ad4e;
 }
 
-.status-card .divider {
-    margin: 12px 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* ANIMĀCIJAS */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-.pulse {
-    animation: pulse 1.5s ease-in-out infinite;
+.status-card .highlight {
+    color: #79c0ff;
+    font-weight: 700;
 }
 
 /* ERROR */
