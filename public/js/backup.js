@@ -90,7 +90,9 @@ const translations = {
         'finish-btn': 'Pabeigt backupu',
         'deposit-manifest-btn': 'Iemaksāt par manifestu un pabeigt',
         'zip-uploaded': '✅ ZIP augšupielādēts!',
-        'manifest-ready': 'Manifests gatavs'
+        'manifest-ready': 'Manifests gatavs',
+        'confirm-key': 'Apstiprināt',
+        'cancel': 'Atcelt'
     },
     en: {
         'backup-title': '📦 PermRepo Backups',
@@ -132,7 +134,9 @@ const translations = {
         'finish-btn': 'Finish backup',
         'deposit-manifest-btn': 'Deposit for manifest and finish',
         'zip-uploaded': '✅ ZIP uploaded!',
-        'manifest-ready': 'Manifest ready'
+        'manifest-ready': 'Manifest ready',
+        'confirm-key': 'Confirm',
+        'cancel': 'Cancel'
     },
     eo: {
         'backup-title': '📦 PermRepo Sekurkopioj',
@@ -174,7 +178,9 @@ const translations = {
         'finish-btn': 'Fini sekurkopion',
         'deposit-manifest-btn': 'Deponi por manifesto kaj fini',
         'zip-uploaded': '✅ ZIP alŝutita!',
-        'manifest-ready': 'Manifesto preta'
+        'manifest-ready': 'Manifesto preta',
+        'confirm-key': 'Konfirmi',
+        'cancel': 'Nuligi'
     }
 };
 
@@ -234,6 +240,78 @@ async function apiJson(url, options = {}) {
     try { result = await response.json(); } catch { throw new Error(`Servera kļūda: HTTP ${response.status}`); }
     if (!response.ok && !result.success) throw new Error(result.error || `HTTP ${response.status}`);
     return result;
+}
+
+// ==================================================
+// MASTER KEY MODAL (HTML input type=password)
+// ==================================================
+
+function promptMasterKey() {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;justify-content:center;align-items:center;z-index:1000;padding:20px;';
+
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#161b22;border:1px solid #30363d;border-radius:12px;padding:32px;max-width:480px;width:100%;box-sizing:border-box;';
+
+        const title = document.createElement('h2');
+        title.textContent = t('key-title');
+        title.style.cssText = 'color:#79c0ff;margin-bottom:16px;';
+
+        const description = document.createElement('p');
+        description.textContent = t('key-description');
+        description.style.cssText = 'color:#b0b8c4;margin-bottom:16px;';
+
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.placeholder = t('enter-key');
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.style.cssText = 'width:100%;padding:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;color:#e6edf3;font-size:16px;margin-bottom:16px;box-sizing:border-box;';
+
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = t('cancel');
+        cancelButton.style.cssText = 'width:100%;padding:12px;background:#30363d;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;margin-bottom:8px;';
+
+        const confirmButton = document.createElement('button');
+        confirmButton.textContent = t('confirm-key');
+        confirmButton.style.cssText = 'width:100%;padding:12px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;';
+
+        box.appendChild(title);
+        box.appendChild(description);
+        box.appendChild(input);
+        box.appendChild(cancelButton);
+        box.appendChild(confirmButton);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        const cleanup = () => { overlay.remove(); };
+
+        confirmButton.onclick = () => {
+            const value = input.value.trim();
+            cleanup();
+            resolve(value);
+        };
+
+        cancelButton.onclick = () => {
+            cleanup();
+            resolve(null);
+        };
+
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                const value = input.value.trim();
+                cleanup();
+                resolve(value);
+            }
+            if (e.key === 'Escape') {
+                cleanup();
+                resolve(null);
+            }
+        });
+
+        input.focus();
+    });
 }
 
 async function init() {
@@ -449,8 +527,7 @@ async function executeZipUpload() {
             masterKey = await generateMasterKey();
             await showMasterKey(masterKey);
         } else {
-            const enteredKey = prompt(t('enter-key'));
-            masterKey = enteredKey ? enteredKey.trim() : null;
+            masterKey = await promptMasterKey();
         }
         if (!isValidMasterKey(masterKey)) {
             masterKey = null;
@@ -495,7 +572,6 @@ async function executeZipUpload() {
         
         setStatus(t('uploading'));
         
-        // BINARY UPLOAD — izmanto FormData ar Blob
         const executeResult = await uploadZipBinary({
             jobId: currentJobId,
             encryptedZip: encryptedZipData,
