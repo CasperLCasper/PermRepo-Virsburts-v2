@@ -110,8 +110,8 @@ export async function reserveUserCredits(walletAddress, wincAmount) {
     const script = `
         local current = redis.call("GET", KEYS[1])
         if not current then current = "0" end
-        local balance = tonumber(current)
-        local required = tonumber(ARGV[1])
+        local balance = current
+        local required = ARGV[1]
         if balance >= required then
             redis.call("SET", KEYS[1], tostring(balance - required))
             return 1
@@ -135,8 +135,8 @@ export async function refundUserCredits(walletAddress, wincAmount) {
     const script = `
         local current = redis.call("GET", KEYS[1])
         if not current then current = "0" end
-        local balance = tonumber(current)
-        local refund = tonumber(ARGV[1])
+        local balance = current
+        local refund = ARGV[1]
         redis.call("SET", KEYS[1], tostring(balance + refund))
         return 1
     `;
