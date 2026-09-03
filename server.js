@@ -197,12 +197,12 @@ const backupLimiter = rateLimit({
 });
 
 // ==================================================
-// MULTER DISK STORAGE
+// MULTER DISK STORAGE — DROŠA DIREKTORIJA
 // ==================================================
 
-const uploadDir = '/tmp/uploads';
+const uploadDir = process.env.UPLOAD_DIR || '/tmp/permrepo-uploads';
 if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
+    fs.mkdirSync(uploadDir, { recursive: true, mode: 0o700 });
 }
 
 const upload = multer({
@@ -211,7 +211,7 @@ const upload = multer({
         filename: (req, file, cb) => cb(null, `${crypto.randomUUID()}-${file.originalname}`)
     }),
     limits: {
-        fileSize: 524288000
+        fileSize: MAX_REPO_BYTES * 2
     }
 });
 
