@@ -11,6 +11,7 @@ import { TurboFactory, EthereumSigner } from '@ardrive/turbo-sdk';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import fs from 'fs';
+import tmp from 'tmp';
 
 import { checkAllServices } from './healthChecks.js';
 import { submitBackupWithMerkle } from './merkle.js';
@@ -197,17 +198,18 @@ const backupLimiter = rateLimit({
 });
 
 // ==================================================
-// MULTER DISK STORAGE — DROŠA DIREKTORIJA
+// MULTER AR TMP BIBLIOTĒKU
 // ==================================================
-
-const uploadDir = process.env.UPLOAD_DIR || '/tmp/permrepo-uploads';
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true, mode: 0o700 });
-}
 
 const upload = multer({
     storage: multer.diskStorage({
-        destination: (req, file, cb) => cb(null, uploadDir),
+        destination: (req, file, cb) => {
+            const tmpDir = tmp.dirSync({ 
+                mode: 0o700,
+                unsafeCleanup: true 
+            });
+            cb(null, tmpDir.name);
+        },
         filename: (req, file, cb) => cb(null, `${crypto.randomUUID()}-${file.originalname}`)
     }),
     limits: {
