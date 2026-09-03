@@ -530,7 +530,7 @@ async function executeZipUpload() {
             if (!file || typeof file.path !== 'string' || typeof file.content !== 'string') throw new Error('Nederīgs faila objekts.');
             const binaryString = atob(file.content);
             const fileBuffer = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) fileBuffer[i] = binaryString.charCodeAt(i);
+            for (let i = 0; i < binaryString.length; i++) fileBuffer[i] = binaryString.codePointAt(i);
             zip.file(file.path, fileBuffer);
         }
         const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
