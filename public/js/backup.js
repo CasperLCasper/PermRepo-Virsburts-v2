@@ -39,6 +39,12 @@ let hasDepositedManifest = false;
 
 let currentManifestPayload = null;
 
+// STATUS SAGLABĀŠANA VALODAS MAIŅAI
+let lastStatusMessage = null;
+let lastStatusType = 'progress';
+let backupCompleted = false;
+let lastManifestTxId = null;
+
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
     "function ownerOf(uint256 tokenId) external view returns (address)",
@@ -49,7 +55,7 @@ const NFT_ABI = [
     "function addBackup(uint256 tokenId, bytes32 manifestHash, bytes32 merkleRoot, string calldata manifestURI, uint256 deadline, bytes calldata signature) external"
 ];
 
-// SVG IKONAS
+// SVG IKONA
 function icon(name) {
     return `<img src="icons/${name}.svg" class="icon-inline">`;
 }
@@ -98,7 +104,10 @@ const translations = {
         'manifest-ready': 'Manifests gatavs',
         'confirm-key': 'Apstiprināt',
         'cancel': 'Atcelt',
-        'costs': 'Izmaksas'
+        'costs': 'Izmaksas',
+        'back-home': 'Atgriezties uz sākumu',
+        'files': 'Faili',
+        'file-size': 'Failu izmērs'
     },
     en: {
         'backup-title': 'PermRepo Backups',
@@ -143,7 +152,10 @@ const translations = {
         'manifest-ready': 'Manifest ready',
         'confirm-key': 'Confirm',
         'cancel': 'Cancel',
-        'costs': 'Cost'
+        'costs': 'Cost',
+        'back-home': 'Back to home',
+        'files': 'Files',
+        'file-size': 'File size'
     },
     eo: {
         'backup-title': 'PermRepo Sekurkopioj',
@@ -188,7 +200,10 @@ const translations = {
         'manifest-ready': 'Manifesto preta',
         'confirm-key': 'Konfirmi',
         'cancel': 'Nuligi',
-        'costs': 'Kosto'
+        'costs': 'Kosto',
+        'back-home': 'Reen al hejmo',
+        'files': 'Dosieroj',
+        'file-size': 'Dosiergrando'
     }
 };
 
@@ -204,10 +219,30 @@ function switchLanguage(lang) {
         btn.classList.toggle('active', btn.dataset.lang === lang);
     });
     applyTranslations();
+    
+    // Atjaunot pogas tekstu atbilstoši valodai
+    const button = document.getElementById('startBackupButton');
+    if (button) {
+        if (backupCompleted) {
+            button.textContent = t('back-home');
+            button.onclick = () => { window.location.href = '/'; };
+        } else if (button.disabled) {
+            // Saglabā esošo stāvokli
+        }
+    }
+    
     if (repoName) {
         const title = document.getElementById('repoTitle');
         if (title) title.textContent = `${t('repo-label')}: ${repoName}`;
     }
+    
+    // Ja ir pabeigts backups un ir manifesta TX ID, atjaunot statusu
+    if (backupCompleted && lastManifestTxId) {
+        renderCompletedStatus();
+    } else if (lastStatusMessage) {
+        setStatus(lastStatusMessage, lastStatusType);
+    }
+    
     if (tokenId) loadNFTInfo();
 }
 
@@ -457,6 +492,58 @@ function resetBackupState() {
     hasDepositedFiles = false;
     hasDepositedManifest = false;
     masterKey = null;
+    backupCompleted = false;
+    lastManifestTxId = null;
+}
+
+function renderCompletedStatus() {
+    const totalCostEth = (Number.parseFloat(currentFileCostEth || '0') + Number.parseFloat(currentManifestCostEth || '0')).toFixed(18);
+    const fileSizeText = formatFileSize(currentFiles.reduce((sum, file) => sum + Number(file.size || 0), 0));
+    
+    const statusCard = document.getElementById('statusCard');
+    const statusIcon = document.getElementById('statusIcon');
+    const statusContent = document.getElementById('statusContent');
+    
+    statusCard.style.display = 'block';
+    statusCard.className = 'status-card success';
+    statusIcon.innerHTML = icon('izdevas-veiksmigi');
+    statusContent.innerHTML = '';
+    
+    const successText = document.createElement('div');
+    successText.innerHTML = `${icon('izdevas-veiksmigi')} ${t('backup-complete')}`;
+    statusContent.appendChild(successText);
+    statusContent.appendChild(document.createElement('br'));
+    
+    const manifestText = document.createElement('div');
+    manifestText.innerHTML = `${icon('manifests')} ${t('manifest-link')}: `;
+    const manifestLink = document.createElement('a');
+    manifestLink.href = `${CONFIG.arweaveGateway}/raw/${encodeURIComponent(lastManifestTxId)}`;
+    manifestLink.target = '_blank';
+    manifestLink.rel = 'noopener noreferrer';
+    manifestLink.textContent = `ar://${lastManifestTxId}`;
+    manifestText.appendChild(manifestLink);
+    statusContent.appendChild(manifestText);
+    statusContent.appendChild(document.createElement('br'));
+    
+    const filesCount = document.createElement('div');
+    filesCount.innerHTML = `${icon('fails')} ${t('files-count')}: ${currentFiles.length}`;
+    statusContent.appendChild(filesCount);
+    
+    const filesSize = document.createElement('div');
+    filesSize.innerHTML = `${icon('fails')} ${t('files-size')}: ${fileSizeText}`;
+    statusContent.appendChild(filesSize);
+    
+    const fileCost = document.createElement('div');
+    fileCost.innerHTML = `${icon('fails')} ${icon('failu-izmaksas')} ${t('file-cost')}: ${currentFileCostEth} Base ETH`;
+    statusContent.appendChild(fileCost);
+    
+    const manifestCost = document.createElement('div');
+    manifestCost.innerHTML = `${icon('manifests')} ${icon('failu-izmaksas')} ${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
+    statusContent.appendChild(manifestCost);
+    
+    const totalCost = document.createElement('div');
+    totalCost.innerHTML = `${icon('summa')} ${icon('failu-izmaksas')} ${t('total-cost')}: ${totalCostEth} Base ETH`;
+    statusContent.appendChild(totalCost);
 }
 
 async function prepareBackup() {
@@ -482,7 +569,9 @@ async function prepareBackup() {
         currentPreviousEncryptionIVs = result.previousEncryptionIVs || {};
         
         if (currentFiles.length === 0) {
-            setStatus(t('no-changes'), 'success');
+            lastStatusMessage = t('no-changes');
+            lastStatusType = 'success';
+            setStatus(lastStatusMessage, lastStatusType);
             button.disabled = false;
             button.textContent = t('start-backup');
             button.onclick = prepareBackup;
@@ -491,11 +580,9 @@ async function prepareBackup() {
         
         const totalBytes = result.totalBytes || 0;
         const sizeText = formatFileSize(totalBytes);
-        setStatus(
-            `${icon('fails')} ${t('files-count')}: ${currentFiles.length}\n` +
-            `${icon('fails')} ${t('files-size')}: ${sizeText}`,
-            'progress'
-        );
+        lastStatusMessage = `${icon('fails')} ${t('files-count')}: ${currentFiles.length}\n${icon('fails')} ${t('files-size')}: ${sizeText}`;
+        lastStatusType = 'progress';
+        setStatus(lastStatusMessage, lastStatusType);
         
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
@@ -516,7 +603,9 @@ async function executeZipUpload() {
         const files = currentFiles;
         const backupCount = await getBackupCountFromChain();
         if (backupCount === 0) {
-            setStatus(t('generate-key'), 'progress');
+            lastStatusMessage = t('generate-key');
+            lastStatusType = 'progress';
+            setStatus(lastStatusMessage, lastStatusType);
             button.textContent = '⏳';
             masterKey = await generateMasterKey();
             await showMasterKey(masterKey);
@@ -532,7 +621,9 @@ async function executeZipUpload() {
             return;
         }
         
-        setStatus(t('creating-zip'), 'progress');
+        lastStatusMessage = t('creating-zip');
+        lastStatusType = 'progress';
+        setStatus(lastStatusMessage, lastStatusType);
         const zip = new JSZip();
         for (const file of files) {
             if (!file || typeof file.path !== 'string' || typeof file.content !== 'string') throw new Error('Nederīgs faila objekts.');
@@ -543,14 +634,18 @@ async function executeZipUpload() {
         }
         const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
         
-        setStatus(t('encrypting'), 'progress');
+        lastStatusMessage = t('encrypting');
+        lastStatusType = 'progress';
+        setStatus(lastStatusMessage, lastStatusType);
         const encrypted = await encryptData(zipBuffer, masterKey);
         const encryptedZipData = encrypted.encrypted;
         currentIV = encrypted.iv;
         currentMerkleRoot = calculateMerkleRoot(files);
         currentFileMetadata = files.map(file => ({ path: file.path, hash: file.hash }));
         
-        setStatus(`${icon('upload')} ${t('uploading')}`, 'progress');
+        lastStatusMessage = `${icon('upload')} ${t('uploading')}`;
+        lastStatusType = 'progress';
+        setStatus(lastStatusMessage, lastStatusType);
         
         const firstResult = await uploadZipBinary({
             jobId: currentJobId,
@@ -564,15 +659,19 @@ async function executeZipUpload() {
             const requiredWei = ethers.parseEther(currentFileCostEth);
             if (requiredWei <= 0n) throw new Error('Serveris pieprasīja maksājumu ar nulles summu.');
             
-            setStatus(`${icon('failu-izmaksas')} ${t('costs')}: ${currentFileCostEth} Base ETH`, 'progress');
+            lastStatusMessage = `${icon('failu-izmaksas')} ${t('costs')}: ${currentFileCostEth} Base ETH`;
+            lastStatusType = 'progress';
+            setStatus(lastStatusMessage, lastStatusType);
             button.textContent = '⏳';
             
             const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: requiredWei });
-            setStatus(t('waiting'), 'progress');
+            lastStatusMessage = t('waiting');
+            setStatus(lastStatusMessage, lastStatusType);
             await tx.wait();
             hasDepositedFiles = true;
             
-            setStatus(`${icon('upload')} ${t('uploading')}`, 'progress');
+            lastStatusMessage = `${icon('upload')} ${t('uploading')}`;
+            setStatus(lastStatusMessage, lastStatusType);
             const retryResult = await uploadZipBinary({
                 jobId: currentJobId,
                 encryptedZip: encryptedZipData,
@@ -587,7 +686,9 @@ async function executeZipUpload() {
             currentZipTxId = firstResult.zipTxId;
         }
         
-        setStatus(`${icon('izdevas-veiksmigi')} ${t('zip-uploaded')}`, 'success');
+        lastStatusMessage = `${icon('izdevas-veiksmigi')} ${t('zip-uploaded')}`;
+        lastStatusType = 'success';
+        setStatus(lastStatusMessage, lastStatusType);
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
         button.onclick = () => finalizeManifest(currentZipTxId, button);
@@ -625,7 +726,9 @@ async function finalizeManifest(zipTxId, button) {
     if (!currentJobId || !zipTxId) { showError('Trūkst backup darba vai ZIP ID.'); return; }
     button.disabled = true;
     try {
-        setStatus(`${icon('upload')} ${t('uploading')}`, 'progress');
+        lastStatusMessage = `${icon('upload')} ${t('uploading')}`;
+        lastStatusType = 'progress';
+        setStatus(lastStatusMessage, lastStatusType);
         let manifestResult = await apiJson('/api/finalize-manifest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -645,21 +748,20 @@ async function finalizeManifest(zipTxId, button) {
             const manifestBytes = new TextEncoder().encode(JSON.stringify(manifestResult.manifest));
             const manifestSize = manifestBytes.length;
             
-            setStatus(
-                `${icon('manifests')} ${t('manifest-ready')}\n\n` +
-                `${t('manifest-size')}: ${formatFileSize(manifestSize)}\n` +
-                `${icon('failu-izmaksas')} ${t('costs')}: ${currentManifestCostEth} Base ETH`,
-                'progress'
-            );
+            lastStatusMessage = `${icon('manifests')} ${t('manifest-ready')}\n\n${t('manifest-size')}: ${formatFileSize(manifestSize)}\n${icon('failu-izmaksas')} ${t('costs')}: ${currentManifestCostEth} Base ETH`;
+            lastStatusType = 'progress';
+            setStatus(lastStatusMessage, lastStatusType);
             
             const manifestCostWei = ethers.parseEther(currentManifestCostEth);
             if (manifestCostWei <= 0n) throw new Error('Serveris pieprasīja manifesta maksājumu ar nulles summu.');
             
             if (!hasDepositedManifest) {
-                setStatus(`${icon('failu-izmaksas')} ${t('costs')}: ${currentManifestCostEth} Base ETH`, 'progress');
+                lastStatusMessage = `${icon('failu-izmaksas')} ${t('costs')}: ${currentManifestCostEth} Base ETH`;
+                setStatus(lastStatusMessage, lastStatusType);
                 button.textContent = '⏳';
                 const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: manifestCostWei });
-                setStatus(t('waiting'), 'progress');
+                lastStatusMessage = t('waiting');
+                setStatus(lastStatusMessage, lastStatusType);
                 await tx.wait();
                 hasDepositedManifest = true;
                 
@@ -682,20 +784,13 @@ async function finalizeManifest(zipTxId, button) {
         currentManifestCostEth = manifestResult.manifestCostEth || '0';
         currentManifestPayload = manifestResult.manifest || currentManifestPayload;
         
-        const manifestBytes = new TextEncoder().encode(JSON.stringify(currentManifestPayload || {}));
-        const manifestSize = manifestBytes.length;
-        
-        setStatus(
-            `${icon('manifests')} ${t('manifest-ready')}\n\n` +
-            `${t('manifest-size')}: ${formatFileSize(manifestSize)}\n` +
-            `${icon('failu-izmaksas')} ${t('costs')}: ${currentManifestCostEth} Base ETH`,
-            'success'
-        );
-        
         const manifestTxId = manifestResult.manifestTxId;
         if (!manifestTxId) throw new Error('Serveris neatgrieza manifestTxId.');
+        lastManifestTxId = manifestTxId;
         
-        setStatus(t('signing'), 'progress');
+        lastStatusMessage = t('signing');
+        lastStatusType = 'progress';
+        setStatus(lastStatusMessage, lastStatusType);
         const provider = new ethers.BrowserProvider(window.ethereum);
         const readContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
         const deadline = Math.floor(Date.now() / 1000) + 600;
@@ -741,55 +836,15 @@ async function finalizeManifest(zipTxId, button) {
         
         if (!finalizeResult.success) throw new Error(finalizeResult.error || 'Backup finalizācija neizdevās.');
         masterKey = null;
-        button.style.display = 'none';
+        backupCompleted = true;
         
-        const totalCostEth = (Number.parseFloat(currentFileCostEth || '0') + Number.parseFloat(currentManifestCostEth || '0')).toFixed(18);
-        const fileSizeText = formatFileSize(currentFiles.reduce((sum, file) => sum + Number(file.size || 0), 0));
+        // Poga mainās uz "Atgriezties uz sākumu"
+        button.style.display = 'block';
+        button.disabled = false;
+        button.textContent = t('back-home');
+        button.onclick = () => { window.location.href = '/'; };
         
-        const statusCard = document.getElementById('statusCard');
-        const statusIcon = document.getElementById('statusIcon');
-        const statusContent = document.getElementById('statusContent');
-        
-        statusCard.style.display = 'block';
-        statusCard.className = 'status-card success';
-        statusIcon.innerHTML = icon('izdevas-veiksmigi');
-        statusContent.innerHTML = '';
-        
-        const successText = document.createElement('div');
-        successText.innerHTML = `${icon('izdevas-veiksmigi')} ${t('backup-complete')}`;
-        statusContent.appendChild(successText);
-        statusContent.appendChild(document.createElement('br'));
-        
-        const manifestText = document.createElement('div');
-        manifestText.innerHTML = `${icon('manifests')} ${t('manifest-link')}: `;
-        const manifestLink = document.createElement('a');
-        manifestLink.href = `${CONFIG.arweaveGateway}/raw/${encodeURIComponent(manifestTxId)}`;
-        manifestLink.target = '_blank';
-        manifestLink.rel = 'noopener noreferrer';
-        manifestLink.textContent = `ar://${manifestTxId}`;
-        manifestText.appendChild(manifestLink);
-        statusContent.appendChild(manifestText);
-        statusContent.appendChild(document.createElement('br'));
-        
-        const filesCount = document.createElement('div');
-        filesCount.innerHTML = `${icon('fails')} ${t('files-count')}: ${currentFiles.length}`;
-        statusContent.appendChild(filesCount);
-        
-        const filesSize = document.createElement('div');
-        filesSize.innerHTML = `${icon('fails')} ${t('files-size')}: ${fileSizeText}`;
-        statusContent.appendChild(filesSize);
-        
-        const fileCost = document.createElement('div');
-        fileCost.innerHTML = `${icon('fails')} ${icon('failu-izmaksas')} ${t('file-cost')}: ${currentFileCostEth} Base ETH`;
-        statusContent.appendChild(fileCost);
-        
-        const manifestCost = document.createElement('div');
-        manifestCost.innerHTML = `${icon('manifests')} ${icon('failu-izmaksas')} ${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
-        statusContent.appendChild(manifestCost);
-        
-        const totalCost = document.createElement('div');
-        totalCost.innerHTML = `${icon('summa')} ${icon('failu-izmaksas')} ${t('total-cost')}: ${totalCostEth} Base ETH`;
-        statusContent.appendChild(totalCost);
+        renderCompletedStatus();
     } catch (error) {
         masterKey = null;
         if (isUserRejected(error)) showError(t('transaction-cancelled'));
@@ -828,6 +883,9 @@ function setStatus(message, type = 'progress') {
     const content = document.getElementById('statusContent');
     
     if (!card || !iconElement || !content) return;
+    
+    lastStatusMessage = message;
+    lastStatusType = type;
     
     const icons = {
         progress: icon('upload'),
