@@ -43,6 +43,15 @@ body {
         inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
+/* Logo nosaukums */
+.logo-title {
+    display: block;
+    max-width: 400px;
+    width: 100%;
+    margin: 0 auto 8px;
+    height: auto;
+}
+
 /* Valodu izvēle */
 .language-selector { 
     display: flex; 
@@ -211,11 +220,12 @@ h1 {
         0 0 60px rgba(255, 107, 100, 0.4);
 }
 
-/* Pogas — ZAĻĀ KRĀSĀ */
+/* Pogas — ar SVG fonu */
 button { 
     width: 100%; 
     padding: 12px; 
-    background: var(--green-gradient);
+    background: url('../icons/poga.svg') no-repeat center center;
+    background-size: 100% 100%;
     color: #fff; 
     border: none;
     border-radius: var(--radius); 
@@ -226,7 +236,8 @@ button {
     transition: var(--transition);
 }
 button:hover { 
-    background: linear-gradient(135deg, #2ea043 0%, #3fb950 100%);
+    background: url('../icons/poga.svg') no-repeat center center;
+    background-size: 100% 100%;
     transform: translateY(-1px);
     box-shadow: 0 8px 20px rgba(63, 185, 80, 0.25);
 }
