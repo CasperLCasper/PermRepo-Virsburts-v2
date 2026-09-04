@@ -49,9 +49,22 @@ const NFT_ABI = [
     "function addBackup(uint256 tokenId, bytes32 manifestHash, bytes32 merkleRoot, string calldata manifestURI, uint256 deadline, bytes calldata signature) external"
 ];
 
+// SVG IKONAS
+const ICONS = {
+    archive: '<img src="icons/arhivs.svg" class="icon-inline">',
+    fileCost: '<img src="icons/failu-izmaksas.svg" class="icon-inline">',
+    manifest: '<img src="icons/manifests.svg" class="icon-inline">',
+    total: '<img src="icons/summa.svg" class="icon-inline">',
+    success: '<img src="icons/izdevas-veiksmigi.svg" class="icon-inline">',
+    error: '<img src="icons/kluda.svg" class="icon-inline">',
+    folder: '<img src="icons/mape-faili.svg" class="icon-inline">',
+    upload: '<img src="icons/upload.svg" class="icon-inline">',
+    download: '<img src="icons/download.svg" class="icon-inline">'
+};
+
 const translations = {
     lv: {
-        'backup-title': '📦 PermRepo Backups',
+        'backup-title': 'PermRepo Backups',
         'repo-label': 'Repozitorijs',
         'nft-token': 'NFT Token ID',
         'backup-count': 'Backupu skaits',
@@ -59,7 +72,7 @@ const translations = {
         'last-merkle': 'Pēdējā Merkle sakne',
         'start-backup': 'Sākt backupu',
         'preparing': 'Sagatavo backupu...',
-        'no-changes': '✅ Nav izmaiņu — visi faili jau ir backupēti!',
+        'no-changes': 'Nav izmaiņu — visi faili jau ir backupēti!',
         'generate-key': 'Ģenerē master atslēgu...',
         'enter-key': 'Ievadi savu Master Key:',
         'deposit-files': 'Iemaksā Treasury par ZIP',
@@ -67,35 +80,35 @@ const translations = {
         'deposit-and-upload': 'Iemaksāt un augšupielādēt',
         'uploading': 'Augšupielādē...',
         'signing': 'Paraksti transakciju...',
-        'backup-complete': '✅ Backups veiksmīgi pabeigts!',
-        'manifest-link': '📦 Manifests',
-        'file-cost': '💳 Failu izmaksas',
-        'manifest-cost': '📄 Manifesta izmaksas',
-        'total-cost': '💎 Kopā',
-        'files-count': '📦 Faili',
-        'files-size': '📦 Failu izmērs',
-        'manifest-size': '📄 Manifesta izmērs',
+        'backup-complete': 'Backups veiksmīgi pabeigts!',
+        'manifest-link': 'Manifests',
+        'file-cost': 'Failu izmaksas',
+        'manifest-cost': 'Manifesta izmaksas',
+        'total-cost': 'Kopā',
+        'files-count': 'Faili',
+        'files-size': 'Failu izmērs',
+        'manifest-size': 'Manifesta izmērs',
         'creating-zip': 'Izveido ZIP...',
         'encrypting': 'Šifrē ZIP...',
         'try-again': 'Mēģināt vēlreiz',
         'transaction-cancelled': 'Transakcija atcelta',
         'saving-key': 'Saglabāju — Turpināt',
-        'copy-key': '📋 Kopēt',
-        'download-key': '⬇️ Lejupielādēt',
-        'key-title': '🔑 Tava Master Atslēga',
+        'copy-key': 'Kopēt',
+        'download-key': 'Lejupielādēt',
+        'key-title': 'Tava Master Atslēga',
         'key-description': 'Šī ir TAVA vienīgā atslēga visiem backupiem. Saglabā to password managerī vai citā drošā vietā!',
         'encrypted-required': 'Master Key ir obligāta!',
         'waiting': 'Gaida apstiprinājumu...',
-        'success': '✅ Veiksmīgi!',
+        'success': 'Veiksmīgi!',
         'finish-btn': 'Pabeigt backupu',
         'deposit-manifest-btn': 'Iemaksāt par manifestu un pabeigt',
-        'zip-uploaded': '✅ ZIP augšupielādēts!',
+        'zip-uploaded': 'ZIP augšupielādēts!',
         'manifest-ready': 'Manifests gatavs',
         'confirm-key': 'Apstiprināt',
         'cancel': 'Atcelt'
     },
     en: {
-        'backup-title': '📦 PermRepo Backups',
+        'backup-title': 'PermRepo Backups',
         'repo-label': 'Repository',
         'nft-token': 'NFT Token ID',
         'backup-count': 'Backup count',
@@ -103,7 +116,7 @@ const translations = {
         'last-merkle': 'Last Merkle root',
         'start-backup': 'Start backup',
         'preparing': 'Preparing backup...',
-        'no-changes': '✅ No changes — all files already backed up!',
+        'no-changes': 'No changes — all files already backed up!',
         'generate-key': 'Generating master key...',
         'enter-key': 'Enter your Master Key:',
         'deposit-files': 'Deposit to Treasury for ZIP',
@@ -111,35 +124,35 @@ const translations = {
         'deposit-and-upload': 'Deposit and upload',
         'uploading': 'Uploading...',
         'signing': 'Sign transaction...',
-        'backup-complete': '✅ Backup successfully completed!',
-        'manifest-link': '📦 Manifest',
-        'file-cost': '💳 File cost',
-        'manifest-cost': '📄 Manifest cost',
-        'total-cost': '💎 Total',
-        'files-count': '📦 Files',
-        'files-size': '📦 File size',
-        'manifest-size': '📄 Manifest size',
+        'backup-complete': 'Backup successfully completed!',
+        'manifest-link': 'Manifest',
+        'file-cost': 'File cost',
+        'manifest-cost': 'Manifest cost',
+        'total-cost': 'Total',
+        'files-count': 'Files',
+        'files-size': 'File size',
+        'manifest-size': 'Manifest size',
         'creating-zip': 'Creating ZIP...',
         'encrypting': 'Encrypting ZIP...',
         'try-again': 'Try again',
         'transaction-cancelled': 'Transaction cancelled',
         'saving-key': 'I saved it — Continue',
-        'copy-key': '📋 Copy',
-        'download-key': '⬇️ Download',
-        'key-title': '🔑 Your Master Key',
+        'copy-key': 'Copy',
+        'download-key': 'Download',
+        'key-title': 'Your Master Key',
         'key-description': 'This is YOUR only key for all backups. Save it in a password manager or other safe place!',
         'encrypted-required': 'Master Key is required!',
         'waiting': 'Waiting for confirmation...',
-        'success': '✅ Success!',
+        'success': 'Success!',
         'finish-btn': 'Finish backup',
         'deposit-manifest-btn': 'Deposit for manifest and finish',
-        'zip-uploaded': '✅ ZIP uploaded!',
+        'zip-uploaded': 'ZIP uploaded!',
         'manifest-ready': 'Manifest ready',
         'confirm-key': 'Confirm',
         'cancel': 'Cancel'
     },
     eo: {
-        'backup-title': '📦 PermRepo Sekurkopioj',
+        'backup-title': 'PermRepo Sekurkopioj',
         'repo-label': 'Deponejo',
         'nft-token': 'NFT Ĵetono ID',
         'backup-count': 'Nombro de sekurkopioj',
@@ -147,7 +160,7 @@ const translations = {
         'last-merkle': 'Lasta Merkle-radiko',
         'start-backup': 'Komenci sekurkopion',
         'preparing': 'Preparante sekurkopion...',
-        'no-changes': '✅ Neniu ŝanĝo — ĉiuj dosieroj jam sekurkopiitaj!',
+        'no-changes': 'Neniu ŝanĝo — ĉiuj dosieroj jam sekurkopiitaj!',
         'generate-key': 'Generante ĉefŝlosilon...',
         'enter-key': 'Enigu vian Ĉefŝlosilon:',
         'deposit-files': 'Deponi al Treasury por ZIP',
@@ -155,29 +168,29 @@ const translations = {
         'deposit-and-upload': 'Deponi kaj alŝuti',
         'uploading': 'Alŝutante...',
         'signing': 'Subskribante transakcion...',
-        'backup-complete': '✅ Sekurkopio sukcese finita!',
-        'manifest-link': '📦 Manifesto',
-        'file-cost': '💳 Dosierkosto',
-        'manifest-cost': '📄 Manifestkosto',
-        'total-cost': '💎 Sumo',
-        'files-count': '📦 Dosieroj',
-        'files-size': '📦 Dosiergrando',
-        'manifest-size': '📄 Manifestogrando',
+        'backup-complete': 'Sekurkopio sukcese finita!',
+        'manifest-link': 'Manifesto',
+        'file-cost': 'Dosierkosto',
+        'manifest-cost': 'Manifestkosto',
+        'total-cost': 'Sumo',
+        'files-count': 'Dosieroj',
+        'files-size': 'Dosiergrando',
+        'manifest-size': 'Manifestogrando',
         'creating-zip': 'Kreante ZIP...',
         'encrypting': 'Ĉifrante ZIP...',
         'try-again': 'Reprovi',
         'transaction-cancelled': 'Transakcio nuligita',
         'saving-key': 'Mi konservis ĝin — Daŭrigi',
-        'copy-key': '📋 Kopii',
-        'download-key': '⬇️ Elŝuti',
-        'key-title': '🔑 Via Ĉefŝlosilo',
+        'copy-key': 'Kopii',
+        'download-key': 'Elŝuti',
+        'key-title': 'Via Ĉefŝlosilo',
         'key-description': 'Ĉi tiu estas VIA sola ŝlosilo por ĉiuj sekurkopioj. Konservu ĝin en pasvort-administrilo aŭ alia sekura loko!',
         'encrypted-required': 'Ĉefŝlosilo estas deviga!',
         'waiting': 'Atendante konfirmon...',
-        'success': '✅ Sukceso!',
+        'success': 'Sukceso!',
         'finish-btn': 'Fini sekurkopion',
         'deposit-manifest-btn': 'Deponi por manifesto kaj fini',
-        'zip-uploaded': '✅ ZIP alŝutita!',
+        'zip-uploaded': 'ZIP alŝutita!',
         'manifest-ready': 'Manifesto preta',
         'confirm-key': 'Konfirmi',
         'cancel': 'Nuligi'
@@ -484,7 +497,7 @@ async function prepareBackup() {
         const totalBytes = result.totalBytes || 0;
         const sizeText = formatFileSize(totalBytes);
         setStatus(
-            `${t('files-count')}: ${currentFiles.length}\n` +
+            `${ICONS.folder} ${currentFiles.length}\n` +
             `${t('files-size')}: ${sizeText}`,
             'progress'
         );
@@ -542,7 +555,7 @@ async function executeZipUpload() {
         currentMerkleRoot = calculateMerkleRoot(files);
         currentFileMetadata = files.map(file => ({ path: file.path, hash: file.hash }));
         
-        setStatus(t('uploading'), 'progress');
+        setStatus(`${ICONS.upload} ${t('uploading')}`, 'progress');
         
         const firstResult = await uploadZipBinary({
             jobId: currentJobId,
@@ -556,7 +569,7 @@ async function executeZipUpload() {
             const requiredWei = ethers.parseEther(currentFileCostEth);
             if (requiredWei <= 0n) throw new Error('Serveris pieprasīja maksājumu ar nulles summu.');
             
-            setStatus(`${t('deposit-files')}: ${currentFileCostEth} Base ETH`, 'progress');
+            setStatus(`${ICONS.fileCost} ${currentFileCostEth} Base ETH`, 'progress');
             button.textContent = '⏳';
             
             const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: requiredWei });
@@ -564,7 +577,7 @@ async function executeZipUpload() {
             await tx.wait();
             hasDepositedFiles = true;
             
-            setStatus(t('uploading'), 'progress');
+            setStatus(`${ICONS.upload} ${t('uploading')}`, 'progress');
             const retryResult = await uploadZipBinary({
                 jobId: currentJobId,
                 encryptedZip: encryptedZipData,
@@ -579,7 +592,7 @@ async function executeZipUpload() {
             currentZipTxId = firstResult.zipTxId;
         }
         
-        setStatus(t('zip-uploaded'), 'success');
+        setStatus(`${ICONS.success} ${t('zip-uploaded')}`, 'success');
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
         button.onclick = () => finalizeManifest(currentZipTxId, button);
@@ -617,7 +630,7 @@ async function finalizeManifest(zipTxId, button) {
     if (!currentJobId || !zipTxId) { showError('Trūkst backup darba vai ZIP ID.'); return; }
     button.disabled = true;
     try {
-        setStatus(t('uploading'), 'progress');
+        setStatus(`${ICONS.upload} ${t('uploading')}`, 'progress');
         let manifestResult = await apiJson('/api/finalize-manifest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -638,9 +651,9 @@ async function finalizeManifest(zipTxId, button) {
             const manifestSize = manifestBytes.length;
             
             setStatus(
-                `${t('manifest-ready')}\n\n` +
+                `${ICONS.manifest} ${t('manifest-ready')}\n\n` +
                 `${t('manifest-size')}: ${formatFileSize(manifestSize)}\n` +
-                `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`,
+                `${ICONS.fileCost} ${currentManifestCostEth} Base ETH`,
                 'progress'
             );
             
@@ -648,7 +661,7 @@ async function finalizeManifest(zipTxId, button) {
             if (manifestCostWei <= 0n) throw new Error('Serveris pieprasīja manifesta maksājumu ar nulles summu.');
             
             if (!hasDepositedManifest) {
-                setStatus(`${t('deposit-manifest')}: ${currentManifestCostEth} Base ETH`, 'progress');
+                setStatus(`${ICONS.fileCost} ${currentManifestCostEth} Base ETH`, 'progress');
                 button.textContent = '⏳';
                 const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: manifestCostWei });
                 setStatus(t('waiting'), 'progress');
@@ -678,9 +691,9 @@ async function finalizeManifest(zipTxId, button) {
         const manifestSize = manifestBytes.length;
         
         setStatus(
-            `${t('manifest-ready')}\n\n` +
+            `${ICONS.manifest} ${t('manifest-ready')}\n\n` +
             `${t('manifest-size')}: ${formatFileSize(manifestSize)}\n` +
-            `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`,
+            `${ICONS.fileCost} ${currentManifestCostEth} Base ETH`,
             'success'
         );
         
@@ -744,7 +757,7 @@ async function finalizeManifest(zipTxId, button) {
         
         statusCard.style.display = 'block';
         statusCard.className = 'status-card success';
-        statusIcon.textContent = '✅';
+        statusIcon.innerHTML = ICONS.success;
         statusContent.innerHTML = '';
         
         const successText = document.createElement('div');
@@ -772,15 +785,15 @@ async function finalizeManifest(zipTxId, button) {
         statusContent.appendChild(filesSize);
         
         const fileCost = document.createElement('div');
-        fileCost.textContent = `${t('file-cost')}: ${currentFileCostEth} Base ETH`;
+        fileCost.innerHTML = `${ICONS.fileCost} ${currentFileCostEth} Base ETH`;
         statusContent.appendChild(fileCost);
         
         const manifestCost = document.createElement('div');
-        manifestCost.textContent = `${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
+        manifestCost.innerHTML = `${ICONS.manifest} ${currentManifestCostEth} Base ETH`;
         statusContent.appendChild(manifestCost);
         
         const totalCost = document.createElement('div');
-        totalCost.textContent = `${t('total-cost')}: ${totalCostEth} Base ETH`;
+        totalCost.innerHTML = `${ICONS.total} ${totalCostEth} Base ETH`;
         statusContent.appendChild(totalCost);
     } catch (error) {
         masterKey = null;
@@ -822,29 +835,29 @@ function setStatus(message, type = 'progress') {
     if (!card || !icon || !content) return;
     
     const icons = {
-        progress: '⏳',
-        success: '✅',
-        error: '❌'
+        progress: ICONS.upload,
+        success: ICONS.success,
+        error: ICONS.error
     };
     
     card.style.display = 'block';
     card.className = `status-card ${type}`;
-    icon.textContent = icons[type] || '⏳';
-    content.textContent = String(message ?? '');
+    icon.innerHTML = icons[type] || ICONS.upload;
+    content.innerHTML = String(message ?? '');
 }
 
 function showError(message) {
     const element = document.getElementById('error');
     if (!element) return;
     element.style.display = 'block';
-    element.textContent = String(message ?? 'Kļūda');
+    element.innerHTML = `${ICONS.error} ${String(message ?? 'Kļūda')}`;
 }
 
 function clearError() {
     const element = document.getElementById('error');
     if (!element) return;
     element.style.display = 'none';
-    element.textContent = '';
+    element.innerHTML = '';
 }
 
 init();
