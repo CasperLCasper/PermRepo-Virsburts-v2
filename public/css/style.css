@@ -52,13 +52,13 @@ body {
     height: auto;
 }
 
-/* SVG ikonas inline */
+/* SVG ikonas inline — 24px */
 .icon-inline {
     display: inline-block;
-    width: 16px;
-    height: 16px;
+    width: 24px;
+    height: 24px;
     vertical-align: middle;
-    margin-right: 4px;
+    margin-right: 6px;
 }
 
 /* Valodu izvēle */
@@ -166,8 +166,8 @@ h1 {
 /* MAZI APLĪŠI TEKSTĀ */
 .dot-inline {
     display: inline-block;
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     margin-right: 6px;
     vertical-align: middle;
@@ -175,12 +175,12 @@ h1 {
 
 .dot-inline.green {
     background: var(--green);
-    box-shadow: 0 0 6px rgba(63, 185, 80, 0.5);
+    box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
 }
 
 .dot-inline.red {
     background: var(--red);
-    box-shadow: 0 0 6px rgba(248, 81, 73, 0.5);
+    box-shadow: 0 0 8px rgba(248, 81, 73, 0.6);
 }
 
 /* Repo status paziņojums */
@@ -189,8 +189,8 @@ h1 {
     padding: 16px;
     margin-top: 16px;
     border-radius: var(--radius);
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 16px;
+    font-weight: 600;
     color: #ffffff;
 }
 .repo-status-display.has-nft {
@@ -280,9 +280,9 @@ button.logout-button:hover {
     padding: 16px;
     border-radius: var(--radius);
     text-align: center;
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 1.5;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
     background: var(--surface);
@@ -297,8 +297,8 @@ button.logout-button:hover {
 
 .status-card .amount {
     font-family: 'SF Mono', 'Fira Code', monospace;
-    font-weight: 600;
-    font-size: 16px;
+    font-weight: 700;
+    font-size: 18px;
     color: #f0ad4e;
 }
 
@@ -307,7 +307,7 @@ button.logout-button:hover {
     color: var(--red); 
     margin-top: 12px; 
     text-align: center; 
-    font-size: 13px; 
+    font-size: 14px; 
     padding: 10px;
     border-radius: var(--radius);
     background: rgba(248, 81, 73, 0.05);
