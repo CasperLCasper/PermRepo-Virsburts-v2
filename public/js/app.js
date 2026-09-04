@@ -28,12 +28,10 @@ const USDC_ABI = [
     "function approve(address spender, uint256 amount) external returns (bool)"
 ];
 
-// SVG IKONAS
-const ICONS = {
-    wallet: '<img src="icons/wallet.svg" class="icon-inline">',
-    success: '<img src="icons/izdevas-veiksmigi.svg" class="icon-inline">',
-    error: '<img src="icons/kluda.svg" class="icon-inline">'
-};
+// SVG IKONA
+function icon(name) {
+    return `<img src="icons/${name}.svg" class="icon-inline">`;
+}
 
 const translations = {
     lv: {
@@ -48,7 +46,7 @@ const translations = {
         'open-backup': 'Izveidot Backupu',
         'mint-nft': 'Izveidot NFT',
         'nft-linked': 'NFT ir piesaistīts šim repozitorijam',
-        'no-nft': 'Šim repozitorijam nav NFT',
+        'no-nft': 'NFT nav piesaistīts šim repozitorijam',
         'subscription-active': 'Abonements: AKTĪVS',
         'subscription-expired': 'Abonements: BEIDZIES — ATJAUNOT',
         'days': 'dienas',
@@ -66,7 +64,7 @@ const translations = {
         'open-backup': 'Create Backup',
         'mint-nft': 'Mint NFT',
         'nft-linked': 'NFT is linked to this repository',
-        'no-nft': 'This repository has no NFT',
+        'no-nft': 'NFT is not linked to this repository',
         'subscription-active': 'Subscription: ACTIVE',
         'subscription-expired': 'Subscription: EXPIRED — RENEW',
         'days': 'days',
@@ -84,7 +82,7 @@ const translations = {
         'open-backup': 'Krei Sekurkopion',
         'mint-nft': 'Krei NFT',
         'nft-linked': 'NFT estas ligita al ĉi tiu deponejo',
-        'no-nft': 'Ĉi tiu deponejo ne havas NFT',
+        'no-nft': 'NFT ne estas ligita al ĉi tiu deponejo',
         'subscription-active': 'Abono: AKTIVA',
         'subscription-expired': 'Abono: FINIĜIS — RENOVIGI',
         'days': 'tagoj',
@@ -116,7 +114,7 @@ function switchLanguage(lang) {
     
     if (userAddress) {
         const walletButton = document.getElementById('connectWalletButton');
-        walletButton.textContent = t('wallet-connected');
+        walletButton.innerHTML = `${icon('wallet')} ${t('wallet-connected')}`;
     }
 }
 
@@ -222,7 +220,7 @@ async function purchaseSubscription() {
         const subscribeTx = await subscriptionContract.connect(providerSigner).subscribe(githubHash);
         await subscribeTx.wait();
         
-        setStatus(`${ICONS.success} Abonements iegādāts!`);
+        setStatus(`${icon('izdevas-veiksmigi')} Abonements iegādāts!`);
         await checkSubscription();
         
     } catch (e) {
@@ -254,7 +252,7 @@ async function connectWallet() {
         document.getElementById('walletAddress').textContent = userAddress;
         
         const walletButton = document.getElementById('connectWalletButton');
-        walletButton.innerHTML = `${ICONS.wallet} ${t('wallet-connected')}`;
+        walletButton.innerHTML = `${icon('wallet')} ${t('wallet-connected')}`;
         walletButton.disabled = true;
         
         await loadRepos();
@@ -338,7 +336,7 @@ async function checkRepoStatus(repoName) {
         repoActions.style.display = 'block';
         
         if (tokenId !== 0n) {
-            repoStatus.innerHTML = `<span class="dot-inline green"></span> ${t('nft-linked')}`;
+            repoStatus.innerHTML = `${icon('ir-nft')} ${t('nft-linked')}`;
             repoStatus.className = 'repo-status-display has-nft';
             actionButton.textContent = t('open-backup');
             actionButton.className = 'sign-button backup-button';
@@ -347,7 +345,7 @@ async function checkRepoStatus(repoName) {
                 window.location.href = `/backup.html?repo=${encodeURIComponent(repoName)}`;
             };
         } else {
-            repoStatus.innerHTML = `<span class="dot-inline red"></span> ${t('no-nft')}`;
+            repoStatus.innerHTML = `${icon('nav-nft')} ${t('no-nft')}`;
             repoStatus.className = 'repo-status-display no-nft';
             actionButton.textContent = t('mint-nft');
             actionButton.className = 'sign-button';
@@ -374,7 +372,7 @@ async function mintNFT(repoName) {
         const tx = await nftWrite.mintRepository(userAddress, fullRepoName, nftImageURI);
         await tx.wait();
         
-        setStatus(`${ICONS.success} NFT izveidots!`);
+        setStatus(`${icon('izdevas-veiksmigi')} NFT izveidots!`);
         await loadRepos();
         await checkRepoStatus(repoName);
         
@@ -394,7 +392,7 @@ function setStatus(msg) {
 
 function showError(msg) { 
     const element = document.getElementById('error');
-    if (element) element.innerHTML = `${ICONS.error} ${msg}`;
+    if (element) element.innerHTML = `${icon('kluda')} ${msg}`;
 }
 
 init();
