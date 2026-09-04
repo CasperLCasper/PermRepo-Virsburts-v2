@@ -39,9 +39,8 @@ let hasDepositedManifest = false;
 
 let currentManifestPayload = null;
 
-// STATUS SAGLABĀŠANA VALODAS MAIŅAI
-let lastStatusMessage = null;
-let lastStatusType = 'progress';
+// STATUS DATU SAGLABĀŠANA VALODAS MAIŅAI
+let lastStatusData = null; // { type: 'files'|'uploading'|'cost'|'success'|'completed'|..., ...dati }
 let backupCompleted = false;
 let lastManifestTxId = null;
 
@@ -105,9 +104,7 @@ const translations = {
         'confirm-key': 'Apstiprināt',
         'cancel': 'Atcelt',
         'costs': 'Izmaksas',
-        'back-home': 'Atgriezties uz sākumu',
-        'files': 'Faili',
-        'file-size': 'Failu izmērs'
+        'back-home': 'Atgriezties uz sākumu'
     },
     en: {
         'backup-title': 'PermRepo Backups',
@@ -153,9 +150,7 @@ const translations = {
         'confirm-key': 'Confirm',
         'cancel': 'Cancel',
         'costs': 'Cost',
-        'back-home': 'Back to home',
-        'files': 'Files',
-        'file-size': 'File size'
+        'back-home': 'Back to home'
     },
     eo: {
         'backup-title': 'PermRepo Sekurkopioj',
@@ -201,9 +196,7 @@ const translations = {
         'confirm-key': 'Konfirmi',
         'cancel': 'Nuligi',
         'costs': 'Kosto',
-        'back-home': 'Reen al hejmo',
-        'files': 'Dosieroj',
-        'file-size': 'Dosiergrando'
+        'back-home': 'Reen al hejmo'
     }
 };
 
@@ -220,7 +213,12 @@ function switchLanguage(lang) {
     });
     applyTranslations();
     
-    // Atjaunot pogas tekstu atbilstoši valodai
+    if (repoName) {
+        const title = document.getElementById('repoTitle');
+        if (title) title.textContent = `${t('repo-label')}: ${repoName}`;
+    }
+    
+    // Atjaunot pogas tekstu
     const button = document.getElementById('startBackupButton');
     if (button) {
         if (backupCompleted) {
@@ -228,20 +226,13 @@ function switchLanguage(lang) {
             button.onclick = () => { window.location.href = '/'; };
         } else if (button.disabled) {
             // Saglabā esošo stāvokli
+        } else if (currentJobId) {
+            // Ja ir aktīvs jobs
         }
     }
     
-    if (repoName) {
-        const title = document.getElementById('repoTitle');
-        if (title) title.textContent = `${t('repo-label')}: ${repoName}`;
-    }
-    
-    // Ja ir pabeigts backups un ir manifesta TX ID, atjaunot statusu
-    if (backupCompleted && lastManifestTxId) {
-        renderCompletedStatus();
-    } else if (lastStatusMessage) {
-        setStatus(lastStatusMessage, lastStatusType);
-    }
+    // Atjaunot statusu ar pareizo valodu
+    renderStatusFromData();
     
     if (tokenId) loadNFTInfo();
 }
@@ -283,6 +274,114 @@ async function apiJson(url, options = {}) {
     try { result = await response.json(); } catch { throw new Error(`Servera kļūda: HTTP ${response.status}`); }
     if (!response.ok && !result.success && !result.paymentRequired) throw new Error(result.error || `HTTP ${response.status}`);
     return result;
+}
+
+// ==================================================
+// STATUS RENDERĒŠANA NO DATIEM
+// ==================================================
+
+function renderStatusFromData() {
+    if (backupCompleted) {
+        renderCompletedStatus();
+        return;
+    }
+    
+    if (!lastStatusData) return;
+    
+    const data = lastStatusData;
+    
+    switch(data.type) {
+        case 'files':
+            setStatus(
+                `${icon('fails')} ${t('files-count')}: ${data.fileCount}\n` +
+                `${icon('fails')} ${t('files-size')}: ${data.fileSizeText}`,
+                'progress'
+            );
+            break;
+        case 'cost':
+            setStatus(
+                `${icon('failu-izmaksas')} ${t('costs')}: ${data.cost} Base ETH`,
+                'progress'
+            );
+            break;
+        case 'uploading':
+            setStatus(`${icon('upload')} ${t('uploading')}`, 'progress');
+            break;
+        case 'success':
+            setStatus(`${icon('izdevas-veiksmigi')} ${t(data.key)}`, 'success');
+            break;
+        case 'manifest-ready':
+            setStatus(
+                `${icon('manifests')} ${t('manifest-ready')}\n\n` +
+                `${t('manifest-size')}: ${data.manifestSizeText}\n` +
+                `${icon('failu-izmaksas')} ${t('costs')}: ${data.cost} Base ETH`,
+                'progress'
+            );
+            break;
+        case 'signing':
+            setStatus(t('signing'), 'progress');
+            break;
+        case 'waiting':
+            setStatus(t('waiting'), 'progress');
+            break;
+        case 'simple':
+            setStatus(t(data.key), data.statusType);
+            break;
+        default:
+            setStatus(t(data.key), data.statusType);
+    }
+}
+
+function renderCompletedStatus() {
+    const totalCostEth = (Number.parseFloat(currentFileCostEth || '0') + Number.parseFloat(currentManifestCostEth || '0')).toFixed(18);
+    const fileSizeText = formatFileSize(currentFiles.reduce((sum, file) => sum + Number(file.size || 0), 0));
+    
+    const statusCard = document.getElementById('statusCard');
+    const statusIcon = document.getElementById('statusIcon');
+    const statusContent = document.getElementById('statusContent');
+    
+    statusCard.style.display = 'block';
+    statusCard.className = 'status-card success';
+    statusIcon.innerHTML = icon('izdevas-veiksmigi');
+    statusContent.innerHTML = '';
+    
+    const successText = document.createElement('div');
+    successText.innerHTML = `${icon('izdevas-veiksmigi')} ${t('backup-complete')}`;
+    statusContent.appendChild(successText);
+    statusContent.appendChild(document.createElement('br'));
+    
+    if (lastManifestTxId) {
+        const manifestText = document.createElement('div');
+        manifestText.innerHTML = `${icon('manifests')} ${t('manifest-link')}: `;
+        const manifestLink = document.createElement('a');
+        manifestLink.href = `${CONFIG.arweaveGateway}/raw/${encodeURIComponent(lastManifestTxId)}`;
+        manifestLink.target = '_blank';
+        manifestLink.rel = 'noopener noreferrer';
+        manifestLink.textContent = `ar://${lastManifestTxId}`;
+        manifestText.appendChild(manifestLink);
+        statusContent.appendChild(manifestText);
+        statusContent.appendChild(document.createElement('br'));
+    }
+    
+    const filesCount = document.createElement('div');
+    filesCount.innerHTML = `${icon('fails')} ${t('files-count')}: ${currentFiles.length}`;
+    statusContent.appendChild(filesCount);
+    
+    const filesSize = document.createElement('div');
+    filesSize.innerHTML = `${icon('fails')} ${t('files-size')}: ${fileSizeText}`;
+    statusContent.appendChild(filesSize);
+    
+    const fileCost = document.createElement('div');
+    fileCost.innerHTML = `${icon('fails')} ${icon('failu-izmaksas')} ${t('file-cost')}: ${currentFileCostEth} Base ETH`;
+    statusContent.appendChild(fileCost);
+    
+    const manifestCost = document.createElement('div');
+    manifestCost.innerHTML = `${icon('manifests')} ${icon('failu-izmaksas')} ${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
+    statusContent.appendChild(manifestCost);
+    
+    const totalCost = document.createElement('div');
+    totalCost.innerHTML = `${icon('summa')} ${icon('failu-izmaksas')} ${t('total-cost')}: ${totalCostEth} Base ETH`;
+    statusContent.appendChild(totalCost);
 }
 
 // ==================================================
@@ -494,56 +593,7 @@ function resetBackupState() {
     masterKey = null;
     backupCompleted = false;
     lastManifestTxId = null;
-}
-
-function renderCompletedStatus() {
-    const totalCostEth = (Number.parseFloat(currentFileCostEth || '0') + Number.parseFloat(currentManifestCostEth || '0')).toFixed(18);
-    const fileSizeText = formatFileSize(currentFiles.reduce((sum, file) => sum + Number(file.size || 0), 0));
-    
-    const statusCard = document.getElementById('statusCard');
-    const statusIcon = document.getElementById('statusIcon');
-    const statusContent = document.getElementById('statusContent');
-    
-    statusCard.style.display = 'block';
-    statusCard.className = 'status-card success';
-    statusIcon.innerHTML = icon('izdevas-veiksmigi');
-    statusContent.innerHTML = '';
-    
-    const successText = document.createElement('div');
-    successText.innerHTML = `${icon('izdevas-veiksmigi')} ${t('backup-complete')}`;
-    statusContent.appendChild(successText);
-    statusContent.appendChild(document.createElement('br'));
-    
-    const manifestText = document.createElement('div');
-    manifestText.innerHTML = `${icon('manifests')} ${t('manifest-link')}: `;
-    const manifestLink = document.createElement('a');
-    manifestLink.href = `${CONFIG.arweaveGateway}/raw/${encodeURIComponent(lastManifestTxId)}`;
-    manifestLink.target = '_blank';
-    manifestLink.rel = 'noopener noreferrer';
-    manifestLink.textContent = `ar://${lastManifestTxId}`;
-    manifestText.appendChild(manifestLink);
-    statusContent.appendChild(manifestText);
-    statusContent.appendChild(document.createElement('br'));
-    
-    const filesCount = document.createElement('div');
-    filesCount.innerHTML = `${icon('fails')} ${t('files-count')}: ${currentFiles.length}`;
-    statusContent.appendChild(filesCount);
-    
-    const filesSize = document.createElement('div');
-    filesSize.innerHTML = `${icon('fails')} ${t('files-size')}: ${fileSizeText}`;
-    statusContent.appendChild(filesSize);
-    
-    const fileCost = document.createElement('div');
-    fileCost.innerHTML = `${icon('fails')} ${icon('failu-izmaksas')} ${t('file-cost')}: ${currentFileCostEth} Base ETH`;
-    statusContent.appendChild(fileCost);
-    
-    const manifestCost = document.createElement('div');
-    manifestCost.innerHTML = `${icon('manifests')} ${icon('failu-izmaksas')} ${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
-    statusContent.appendChild(manifestCost);
-    
-    const totalCost = document.createElement('div');
-    totalCost.innerHTML = `${icon('summa')} ${icon('failu-izmaksas')} ${t('total-cost')}: ${totalCostEth} Base ETH`;
-    statusContent.appendChild(totalCost);
+    lastStatusData = null;
 }
 
 async function prepareBackup() {
@@ -551,6 +601,7 @@ async function prepareBackup() {
     if (!button) return;
     button.disabled = true;
     button.textContent = `⏳ ${t('preparing')}`;
+    lastStatusData = { type: 'simple', key: 'preparing', statusType: 'progress' };
     setStatus(t('preparing'), 'progress');
     clearError();
     try {
@@ -569,9 +620,8 @@ async function prepareBackup() {
         currentPreviousEncryptionIVs = result.previousEncryptionIVs || {};
         
         if (currentFiles.length === 0) {
-            lastStatusMessage = t('no-changes');
-            lastStatusType = 'success';
-            setStatus(lastStatusMessage, lastStatusType);
+            lastStatusData = { type: 'simple', key: 'no-changes', statusType: 'success' };
+            setStatus(t('no-changes'), 'success');
             button.disabled = false;
             button.textContent = t('start-backup');
             button.onclick = prepareBackup;
@@ -580,9 +630,12 @@ async function prepareBackup() {
         
         const totalBytes = result.totalBytes || 0;
         const sizeText = formatFileSize(totalBytes);
-        lastStatusMessage = `${icon('fails')} ${t('files-count')}: ${currentFiles.length}\n${icon('fails')} ${t('files-size')}: ${sizeText}`;
-        lastStatusType = 'progress';
-        setStatus(lastStatusMessage, lastStatusType);
+        lastStatusData = { type: 'files', fileCount: currentFiles.length, fileSizeText: sizeText };
+        setStatus(
+            `${icon('fails')} ${t('files-count')}: ${currentFiles.length}\n` +
+            `${icon('fails')} ${t('files-size')}: ${sizeText}`,
+            'progress'
+        );
         
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
@@ -603,9 +656,8 @@ async function executeZipUpload() {
         const files = currentFiles;
         const backupCount = await getBackupCountFromChain();
         if (backupCount === 0) {
-            lastStatusMessage = t('generate-key');
-            lastStatusType = 'progress';
-            setStatus(lastStatusMessage, lastStatusType);
+            lastStatusData = { type: 'simple', key: 'generate-key', statusType: 'progress' };
+            setStatus(t('generate-key'), 'progress');
             button.textContent = '⏳';
             masterKey = await generateMasterKey();
             await showMasterKey(masterKey);
@@ -621,9 +673,8 @@ async function executeZipUpload() {
             return;
         }
         
-        lastStatusMessage = t('creating-zip');
-        lastStatusType = 'progress';
-        setStatus(lastStatusMessage, lastStatusType);
+        lastStatusData = { type: 'simple', key: 'creating-zip', statusType: 'progress' };
+        setStatus(t('creating-zip'), 'progress');
         const zip = new JSZip();
         for (const file of files) {
             if (!file || typeof file.path !== 'string' || typeof file.content !== 'string') throw new Error('Nederīgs faila objekts.');
@@ -634,18 +685,16 @@ async function executeZipUpload() {
         }
         const zipBuffer = await zip.generateAsync({ type: 'uint8array' });
         
-        lastStatusMessage = t('encrypting');
-        lastStatusType = 'progress';
-        setStatus(lastStatusMessage, lastStatusType);
+        lastStatusData = { type: 'simple', key: 'encrypting', statusType: 'progress' };
+        setStatus(t('encrypting'), 'progress');
         const encrypted = await encryptData(zipBuffer, masterKey);
         const encryptedZipData = encrypted.encrypted;
         currentIV = encrypted.iv;
         currentMerkleRoot = calculateMerkleRoot(files);
         currentFileMetadata = files.map(file => ({ path: file.path, hash: file.hash }));
         
-        lastStatusMessage = `${icon('upload')} ${t('uploading')}`;
-        lastStatusType = 'progress';
-        setStatus(lastStatusMessage, lastStatusType);
+        lastStatusData = { type: 'uploading' };
+        setStatus(`${icon('upload')} ${t('uploading')}`, 'progress');
         
         const firstResult = await uploadZipBinary({
             jobId: currentJobId,
@@ -659,19 +708,18 @@ async function executeZipUpload() {
             const requiredWei = ethers.parseEther(currentFileCostEth);
             if (requiredWei <= 0n) throw new Error('Serveris pieprasīja maksājumu ar nulles summu.');
             
-            lastStatusMessage = `${icon('failu-izmaksas')} ${t('costs')}: ${currentFileCostEth} Base ETH`;
-            lastStatusType = 'progress';
-            setStatus(lastStatusMessage, lastStatusType);
+            lastStatusData = { type: 'cost', cost: currentFileCostEth };
+            setStatus(`${icon('failu-izmaksas')} ${t('costs')}: ${currentFileCostEth} Base ETH`, 'progress');
             button.textContent = '⏳';
             
             const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: requiredWei });
-            lastStatusMessage = t('waiting');
-            setStatus(lastStatusMessage, lastStatusType);
+            lastStatusData = { type: 'waiting' };
+            setStatus(t('waiting'), 'progress');
             await tx.wait();
             hasDepositedFiles = true;
             
-            lastStatusMessage = `${icon('upload')} ${t('uploading')}`;
-            setStatus(lastStatusMessage, lastStatusType);
+            lastStatusData = { type: 'uploading' };
+            setStatus(`${icon('upload')} ${t('uploading')}`, 'progress');
             const retryResult = await uploadZipBinary({
                 jobId: currentJobId,
                 encryptedZip: encryptedZipData,
@@ -686,9 +734,8 @@ async function executeZipUpload() {
             currentZipTxId = firstResult.zipTxId;
         }
         
-        lastStatusMessage = `${icon('izdevas-veiksmigi')} ${t('zip-uploaded')}`;
-        lastStatusType = 'success';
-        setStatus(lastStatusMessage, lastStatusType);
+        lastStatusData = { type: 'success', key: 'zip-uploaded' };
+        setStatus(`${icon('izdevas-veiksmigi')} ${t('zip-uploaded')}`, 'success');
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
         button.onclick = () => finalizeManifest(currentZipTxId, button);
@@ -726,9 +773,8 @@ async function finalizeManifest(zipTxId, button) {
     if (!currentJobId || !zipTxId) { showError('Trūkst backup darba vai ZIP ID.'); return; }
     button.disabled = true;
     try {
-        lastStatusMessage = `${icon('upload')} ${t('uploading')}`;
-        lastStatusType = 'progress';
-        setStatus(lastStatusMessage, lastStatusType);
+        lastStatusData = { type: 'uploading' };
+        setStatus(`${icon('upload')} ${t('uploading')}`, 'progress');
         let manifestResult = await apiJson('/api/finalize-manifest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -747,21 +793,26 @@ async function finalizeManifest(zipTxId, button) {
             
             const manifestBytes = new TextEncoder().encode(JSON.stringify(manifestResult.manifest));
             const manifestSize = manifestBytes.length;
+            const manifestSizeText = formatFileSize(manifestSize);
             
-            lastStatusMessage = `${icon('manifests')} ${t('manifest-ready')}\n\n${t('manifest-size')}: ${formatFileSize(manifestSize)}\n${icon('failu-izmaksas')} ${t('costs')}: ${currentManifestCostEth} Base ETH`;
-            lastStatusType = 'progress';
-            setStatus(lastStatusMessage, lastStatusType);
+            lastStatusData = { type: 'manifest-ready', cost: currentManifestCostEth, manifestSizeText };
+            setStatus(
+                `${icon('manifests')} ${t('manifest-ready')}\n\n` +
+                `${t('manifest-size')}: ${manifestSizeText}\n` +
+                `${icon('failu-izmaksas')} ${t('costs')}: ${currentManifestCostEth} Base ETH`,
+                'progress'
+            );
             
             const manifestCostWei = ethers.parseEther(currentManifestCostEth);
             if (manifestCostWei <= 0n) throw new Error('Serveris pieprasīja manifesta maksājumu ar nulles summu.');
             
             if (!hasDepositedManifest) {
-                lastStatusMessage = `${icon('failu-izmaksas')} ${t('costs')}: ${currentManifestCostEth} Base ETH`;
-                setStatus(lastStatusMessage, lastStatusType);
+                lastStatusData = { type: 'cost', cost: currentManifestCostEth };
+                setStatus(`${icon('failu-izmaksas')} ${t('costs')}: ${currentManifestCostEth} Base ETH`, 'progress');
                 button.textContent = '⏳';
                 const tx = await signer.sendTransaction({ to: CONFIG.treasuryAddress, value: manifestCostWei });
-                lastStatusMessage = t('waiting');
-                setStatus(lastStatusMessage, lastStatusType);
+                lastStatusData = { type: 'waiting' };
+                setStatus(t('waiting'), 'progress');
                 await tx.wait();
                 hasDepositedManifest = true;
                 
@@ -788,9 +839,8 @@ async function finalizeManifest(zipTxId, button) {
         if (!manifestTxId) throw new Error('Serveris neatgrieza manifestTxId.');
         lastManifestTxId = manifestTxId;
         
-        lastStatusMessage = t('signing');
-        lastStatusType = 'progress';
-        setStatus(lastStatusMessage, lastStatusType);
+        lastStatusData = { type: 'signing' };
+        setStatus(t('signing'), 'progress');
         const provider = new ethers.BrowserProvider(window.ethereum);
         const readContract = new ethers.Contract(CONFIG.nftAddress, NFT_ABI, provider);
         const deadline = Math.floor(Date.now() / 1000) + 600;
@@ -883,9 +933,6 @@ function setStatus(message, type = 'progress') {
     const content = document.getElementById('statusContent');
     
     if (!card || !iconElement || !content) return;
-    
-    lastStatusMessage = message;
-    lastStatusType = type;
     
     const icons = {
         progress: icon('upload'),
