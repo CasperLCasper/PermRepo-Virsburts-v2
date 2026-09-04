@@ -28,6 +28,13 @@ const USDC_ABI = [
     "function approve(address spender, uint256 amount) external returns (bool)"
 ];
 
+// SVG IKONAS
+const ICONS = {
+    wallet: '<img src="icons/wallet.svg" class="icon-inline">',
+    success: '<img src="icons/izdevas-veiksmigi.svg" class="icon-inline">',
+    error: '<img src="icons/kluda.svg" class="icon-inline">'
+};
+
 const translations = {
     lv: {
         subtitle: 'GitHub repo backupi uz Arweave',
@@ -215,7 +222,7 @@ async function purchaseSubscription() {
         const subscribeTx = await subscriptionContract.connect(providerSigner).subscribe(githubHash);
         await subscribeTx.wait();
         
-        setStatus('✅ Abonements iegādāts!');
+        setStatus(`${ICONS.success} Abonements iegādāts!`);
         await checkSubscription();
         
     } catch (e) {
@@ -247,7 +254,7 @@ async function connectWallet() {
         document.getElementById('walletAddress').textContent = userAddress;
         
         const walletButton = document.getElementById('connectWalletButton');
-        walletButton.textContent = t('wallet-connected');
+        walletButton.innerHTML = `${ICONS.wallet} ${t('wallet-connected')}`;
         walletButton.disabled = true;
         
         await loadRepos();
@@ -367,7 +374,7 @@ async function mintNFT(repoName) {
         const tx = await nftWrite.mintRepository(userAddress, fullRepoName, nftImageURI);
         await tx.wait();
         
-        setStatus('✅ NFT izveidots!');
+        setStatus(`${ICONS.success} NFT izveidots!`);
         await loadRepos();
         await checkRepoStatus(repoName);
         
@@ -381,11 +388,13 @@ async function mintNFT(repoName) {
 }
 
 function setStatus(msg) { 
-    document.getElementById('status').textContent = msg; 
+    const element = document.getElementById('status');
+    if (element) element.innerHTML = msg;
 }
 
 function showError(msg) { 
-    document.getElementById('error').textContent = msg; 
+    const element = document.getElementById('error');
+    if (element) element.innerHTML = `${ICONS.error} ${msg}`;
 }
 
 init();
