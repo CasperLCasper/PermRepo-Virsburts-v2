@@ -40,9 +40,12 @@ let hasDepositedManifest = false;
 let currentManifestPayload = null;
 
 // STATUS DATU SAGLABĀŠANA VALODAS MAIŅAI
-let lastStatusData = null; // { type: 'files'|'uploading'|'cost'|'success'|'completed'|..., ...dati }
+let lastStatusData = null;
 let backupCompleted = false;
 let lastManifestTxId = null;
+
+// POGAS STĀVOKĻA SAGLABĀŠANA
+let buttonState = null; // { textKey: 'deposit-manifest-btn'|'deposit-and-upload'|'start-backup', disabled: true/false, onClick: 'manifest'|'zip'|'prepare' }
 
 const NFT_ABI = [
     "function repositoryTokens(bytes32 repoHash) external view returns (uint256)",
@@ -218,23 +221,14 @@ function switchLanguage(lang) {
         if (title) title.textContent = `${t('repo-label')}: ${repoName}`;
     }
     
-    // Atjaunot pogas tekstu
-    const button = document.getElementById('startBackupButton');
-    if (button) {
-        if (backupCompleted) {
-            button.textContent = t('back-home');
-            button.onclick = () => { window.location.href = '/'; };
-        } else if (button.disabled) {
-            // Saglabā esošo stāvokli
-        } else if (currentJobId) {
-            // Ja ir aktīvs jobs
-        }
-    }
+    // Atjaunot pogas tekstu atbilstoši saglabātajam stāvoklim
+    restoreButtonState();
     
     // Atjaunot statusu ar pareizo valodu
     renderStatusFromData();
     
-    if (tokenId) loadNFTInfo();
+    // NEIZSAUKT loadNFTInfo(), jo tas atjauno pogu uz "Sākt backupu"
+    // un pārtrauc aktīvu backup procesu
 }
 
 function applyTranslations() {
@@ -274,6 +268,47 @@ async function apiJson(url, options = {}) {
     try { result = await response.json(); } catch { throw new Error(`Servera kļūda: HTTP ${response.status}`); }
     if (!response.ok && !result.success && !result.paymentRequired) throw new Error(result.error || `HTTP ${response.status}`);
     return result;
+}
+
+// ==================================================
+// POGAS STĀVOKĻA PĀRVALDĪBA
+// ==================================================
+
+function saveButtonState(textKey, disabled, onClickType) {
+    buttonState = { textKey, disabled, onClickType };
+}
+
+function restoreButtonState() {
+    const button = document.getElementById('startBackupButton');
+    if (!button) return;
+    
+    if (backupCompleted) {
+        button.style.display = 'block';
+        button.disabled = false;
+        button.textContent = t('back-home');
+        button.onclick = () => { window.location.href = '/'; };
+        return;
+    }
+    
+    if (!buttonState) return;
+    
+    button.style.display = 'block';
+    button.disabled = buttonState.disabled;
+    button.textContent = t(buttonState.textKey);
+    
+    if (buttonState.disabled) return;
+    
+    switch(buttonState.onClickType) {
+        case 'manifest':
+            button.onclick = () => finalizeManifest(currentZipTxId, button);
+            break;
+        case 'zip':
+            button.onclick = executeZipUpload;
+            break;
+        case 'prepare':
+            button.onclick = prepareBackup;
+            break;
+    }
 }
 
 // ==================================================
@@ -512,10 +547,14 @@ async function loadNFTInfo() {
         
         const button = document.getElementById('startBackupButton');
         if (button) {
+            // NEATJAUNO pogu, ja ir aktīvs jobs vai pabeigts backups
+            if (currentJobId || backupCompleted) return;
+            
             button.style.display = 'block';
             button.disabled = false;
             button.textContent = t('start-backup');
             button.onclick = prepareBackup;
+            saveButtonState('start-backup', false, 'prepare');
         }
     } catch (error) { showError(error.message); }
 }
@@ -594,6 +633,7 @@ function resetBackupState() {
     backupCompleted = false;
     lastManifestTxId = null;
     lastStatusData = null;
+    buttonState = null;
 }
 
 async function prepareBackup() {
@@ -625,6 +665,7 @@ async function prepareBackup() {
             button.disabled = false;
             button.textContent = t('start-backup');
             button.onclick = prepareBackup;
+            saveButtonState('start-backup', false, 'prepare');
             return;
         }
         
@@ -640,11 +681,13 @@ async function prepareBackup() {
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
         button.onclick = executeZipUpload;
+        saveButtonState('deposit-and-upload', false, 'zip');
     } catch (error) {
         showError(error.message);
         button.disabled = false;
         button.textContent = t('start-backup');
         button.onclick = prepareBackup;
+        saveButtonState('start-backup', false, 'prepare');
     }
 }
 
@@ -652,6 +695,7 @@ async function executeZipUpload() {
     const button = document.getElementById('startBackupButton');
     if (!button || !currentJobId) { showError('Backup sesija nav atrasta.'); return; }
     button.disabled = true;
+    saveButtonState('deposit-and-upload', true, 'zip');
     try {
         const files = currentFiles;
         const backupCount = await getBackupCountFromChain();
@@ -670,6 +714,7 @@ async function executeZipUpload() {
             button.disabled = false;
             button.textContent = t('deposit-and-upload');
             button.onclick = executeZipUpload;
+            saveButtonState('deposit-and-upload', false, 'zip');
             return;
         }
         
@@ -739,6 +784,7 @@ async function executeZipUpload() {
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
         button.onclick = () => finalizeManifest(currentZipTxId, button);
+        saveButtonState('deposit-manifest-btn', false, 'manifest');
     } catch (error) {
         masterKey = null;
         if (isUserRejected(error)) showError(t('transaction-cancelled'));
@@ -746,6 +792,7 @@ async function executeZipUpload() {
         button.disabled = false;
         button.textContent = t('deposit-and-upload');
         button.onclick = executeZipUpload;
+        saveButtonState('deposit-and-upload', false, 'zip');
     }
 }
 
@@ -772,6 +819,7 @@ async function uploadZipBinary({ jobId, encryptedZip, iv, fileMetadata, paymentT
 async function finalizeManifest(zipTxId, button) {
     if (!currentJobId || !zipTxId) { showError('Trūkst backup darba vai ZIP ID.'); return; }
     button.disabled = true;
+    saveButtonState('deposit-manifest-btn', true, 'manifest');
     try {
         lastStatusData = { type: 'uploading' };
         setStatus(`${icon('upload')} ${t('uploading')}`, 'progress');
@@ -888,7 +936,6 @@ async function finalizeManifest(zipTxId, button) {
         masterKey = null;
         backupCompleted = true;
         
-        // Poga mainās uz "Atgriezties uz sākumu"
         button.style.display = 'block';
         button.disabled = false;
         button.textContent = t('back-home');
@@ -902,6 +949,7 @@ async function finalizeManifest(zipTxId, button) {
         button.disabled = false;
         button.textContent = t('deposit-manifest-btn');
         button.onclick = () => finalizeManifest(zipTxId, button);
+        saveButtonState('deposit-manifest-btn', false, 'manifest');
     }
 }
 
