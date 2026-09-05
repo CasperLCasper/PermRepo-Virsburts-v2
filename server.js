@@ -146,6 +146,32 @@ async function withJobLock(jobId, fn) {
     }
 }
 
+// ==================================================
+// TREASURY → TURBO PAYMENT
+// ==================================================
+
+async function payTreasuryToTurbo(provider, amountWei, paymentId) {
+    const turboAddress = await getTurboPaymentAddress();
+    const operatorWallet = getOperatorWallet(provider);
+    const treasuryWrite = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, operatorWallet);
+    
+    const treasuryRead = new ethers.Contract(TREASURY_ADDRESS, TREASURY_ABI, provider);
+    const isOp = await treasuryRead.isOperator(operatorWallet.address);
+    if (!isOp) {
+        throw new Error('Operators nav atļauts Treasury payTurbo izsaukšanai.');
+    }
+    
+    const tx = await treasuryWrite.payTurbo(amountWei, paymentId, turboAddress);
+    await tx.wait();
+    
+    logSuccess('Treasury → Turbo transakcija: ' + tx.hash);
+    logInfo('Payment ID', paymentId);
+    logInfo('Destination', turboAddress);
+    logInfo('Summa', ethers.formatEther(amountWei) + ' Base ETH');
+    
+    return tx.hash;
+}
+
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
@@ -974,6 +1000,10 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
             const claimed = await claimPaymentTx(paymentTxHash, { jobId, stage: 'zip', walletAddress: wallet, amountWei: expectedWei.toString() });
             if (!claimed) throw new Error('Šī payment transakcija jau ir izmantota.');
             
+            // TREASURY → TURBO PAYMENT
+            const paymentId = ethers.id(`${jobId}-zip`);
+            await payTreasuryToTurbo(provider, expectedWei, paymentId);
+            
             await updateJob(jobId, {
                 filePaymentTxHash: paymentTxHash,
                 zipStartedAt: Date.now(),
@@ -1222,6 +1252,10 @@ app.post('/api/finalize-manifest', backupLimiter, async (req, res) => {
                 const claimed = await claimPaymentTx(paymentTxHash, { jobId, stage: 'manifest', walletAddress: wallet, amountWei: expectedWei.toString() });
                 if (!claimed) throw new Error('Šī payment transakcija jau ir izmantota.');
                 paymentVerified = true;
+                
+                // TREASURY → TURBO PAYMENT
+                const paymentId = ethers.id(`${jobId}-manifest`);
+                await payTreasuryToTurbo(provider, expectedWei, paymentId);
             } else {
                 const reserved = await reserveUserCredits(wallet, manifestWinc);
                 if (!reserved) {
