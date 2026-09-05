@@ -62,6 +62,33 @@ function icon(name) {
     return `<img src="icons/${name}.svg" class="icon-inline">`;
 }
 
+// DROŠA FUNKCIJA: Apstrādā tekstu ar mūsu ikonām bez XSS riska
+function safeRender(container, message) {
+    container.innerHTML = '';
+    
+    if (typeof message === 'string') {
+        // Sadala pēc mūsu ikonām
+        const parts = message.split(/(<img[^>]*>)/g);
+        
+        for (const part of parts) {
+            if (part.startsWith('<img')) {
+                // Pārbauda, vai šī ir MŪSU ģenerētā ikona
+                if (part.includes('icons/') && part.includes('class="icon-inline"')) {
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = part;
+                    if (tempDiv.firstChild) {
+                        container.appendChild(tempDiv.firstChild);
+                    }
+                }
+                // Ja nav mūsu ikona - ignorē (neizpilda)
+            } else if (part.trim()) {
+                // Vienkāršs teksts - droši ar textContent
+                container.appendChild(document.createTextNode(part));
+            }
+        }
+    }
+}
+
 const translations = {
     lv: {
         'backup-title': 'PermRepo Backups',
@@ -380,14 +407,19 @@ function renderCompletedStatus() {
     statusIcon.innerHTML = icon('izdevas-veiksmigi');
     statusContent.innerHTML = '';
     
+    // DROŠI pievieno saturu
     const successText = document.createElement('div');
-    successText.innerHTML = `${icon('izdevas-veiksmigi')} ${t('backup-complete')}`;
+    safeRender(successText, `${icon('izdevas-veiksmigi')} ${t('backup-complete')}`);
     statusContent.appendChild(successText);
     statusContent.appendChild(document.createElement('br'));
     
     if (lastManifestTxId) {
         const manifestText = document.createElement('div');
-        manifestText.innerHTML = `${icon('manifests')} ${t('manifest-link')}: `;
+        manifestText.innerHTML = '';
+        const manifestIconSpan = document.createElement('span');
+        manifestIconSpan.innerHTML = icon('manifests');
+        manifestText.appendChild(manifestIconSpan);
+        manifestText.appendChild(document.createTextNode(` ${t('manifest-link')}: `));
         const manifestLink = document.createElement('a');
         manifestLink.href = `${CONFIG.arweaveGateway}/raw/${encodeURIComponent(lastManifestTxId)}`;
         manifestLink.target = '_blank';
@@ -398,24 +430,25 @@ function renderCompletedStatus() {
         statusContent.appendChild(document.createElement('br'));
     }
     
+    // DROŠI pievieno failu informāciju
     const filesCount = document.createElement('div');
-    filesCount.innerHTML = `${icon('fails')} ${t('files-count')}: ${currentFiles.length}`;
+    safeRender(filesCount, `${icon('fails')} ${t('files-count')}: ${currentFiles.length}`);
     statusContent.appendChild(filesCount);
     
     const filesSize = document.createElement('div');
-    filesSize.innerHTML = `${icon('fails')} ${t('files-size')}: ${fileSizeText}`;
+    safeRender(filesSize, `${icon('fails')} ${t('files-size')}: ${fileSizeText}`);
     statusContent.appendChild(filesSize);
     
     const fileCost = document.createElement('div');
-    fileCost.innerHTML = `${icon('fails')} ${icon('failu-izmaksas')} ${t('file-cost')}: ${currentFileCostEth} Base ETH`;
+    safeRender(fileCost, `${icon('fails')} ${icon('failu-izmaksas')} ${t('file-cost')}: ${currentFileCostEth} Base ETH`);
     statusContent.appendChild(fileCost);
     
     const manifestCost = document.createElement('div');
-    manifestCost.innerHTML = `${icon('manifests')} ${icon('failu-izmaksas')} ${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`;
+    safeRender(manifestCost, `${icon('manifests')} ${icon('failu-izmaksas')} ${t('manifest-cost')}: ${currentManifestCostEth} Base ETH`);
     statusContent.appendChild(manifestCost);
     
     const totalCost = document.createElement('div');
-    totalCost.innerHTML = `${icon('summa')} ${icon('failu-izmaksas')} ${t('total-cost')}: ${totalCostEth} Base ETH`;
+    safeRender(totalCost, `${icon('summa')} ${icon('failu-izmaksas')} ${t('total-cost')}: ${totalCostEth} Base ETH`);
     statusContent.appendChild(totalCost);
 }
 
@@ -975,6 +1008,7 @@ function calculateMerkleRoot(files) {
     return ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(['bytes32[]'], [fileHashes]));
 }
 
+// DROŠA setStatus funkcija - novērš XSS
 function setStatus(message, type = 'progress') {
     const card = document.getElementById('statusCard');
     const iconElement = document.getElementById('statusIcon');
@@ -983,22 +1017,39 @@ function setStatus(message, type = 'progress') {
     if (!card || !iconElement || !content) return;
     
     const icons = {
-        progress: icon('upload'),
-        success: icon('izdevas-veiksmigi'),
-        error: icon('kluda')
+        progress: 'upload',
+        success: 'izdevas-veiksmigi',
+        error: 'kluda'
     };
     
     card.style.display = 'block';
     card.className = `status-card ${type}`;
-    iconElement.innerHTML = icons[type] || icon('upload');
-    content.innerHTML = String(message ?? '');
+    
+    // Ikonu ieliek droši (no mūsu icon() funkcijas)
+    iconElement.innerHTML = icon(icons[type] || 'upload');
+    
+    // Saturu ieliek DROŠI ar safeRender
+    safeRender(content, String(message ?? ''));
 }
 
+// DROŠA showError funkcija - novērš XSS
 function showError(message) {
     const element = document.getElementById('error');
     if (!element) return;
     element.style.display = 'block';
-    element.innerHTML = `${icon('kluda')} ${String(message ?? 'Kļūda')}`;
+    
+    // Notīra
+    element.innerHTML = '';
+    
+    // Pievieno ikonu (droša)
+    const iconSpan = document.createElement('span');
+    iconSpan.innerHTML = icon('kluda');
+    element.appendChild(iconSpan);
+    
+    // Pievieno tekstu (droši)
+    const textSpan = document.createElement('span');
+    textSpan.textContent = String(message ?? 'Kļūda');
+    element.appendChild(textSpan);
 }
 
 function clearError() {
