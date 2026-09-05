@@ -59,7 +59,7 @@ const MAX_REPO_FILES = Number(process.env.MAX_REPO_FILES || 5000);
 const MAX_REPO_BYTES = Number(process.env.MAX_REPO_BYTES || 524288000);
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES || 104857600);
 const JOB_TTL_SECONDS = Number(process.env.JOB_TTL_SECONDS || 3600);
-const DOWNLOAD_CONCURRENCY = 3; // Samazināts no 10 uz 3
+const DOWNLOAD_CONCURRENCY = 3;
 const MAX_TX_AGE_SECONDS = 4 * 60 * 60;
 
 initRedis();
@@ -283,7 +283,7 @@ const backupLimiter = rateLimit({
     message: { success: false, error: 'Pārāk daudz pieprasījumu — mēģini vēlāk.' }
 });
 
-const githubRateLimiter = rateLimit({
+const githubApiLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 30,
     message: { success: false, error: 'Pārāk daudz GitHub operāciju — mēģini vēlāk.' },
@@ -403,11 +403,11 @@ class GitHubRateLimiter {
     }
 }
 
-const githubRateLimiter = new GitHubRateLimiter();
+const githubRateLimiterInstance = new GitHubRateLimiter();
 
 async function fetchWithRetry(url, options, retries = 3) {
     for (let attempt = 0; attempt < retries; attempt++) {
-        const response = await githubRateLimiter.makeRequest(url, options);
+        const response = await githubRateLimiterInstance.makeRequest(url, options);
         
         if (response.status === 403 || response.status === 429) {
             const backoff = Math.pow(2, attempt) * 1000;
@@ -648,7 +648,7 @@ app.get('/api/github/user', (req, res) => {
     return res.json({ success: false });
 });
 
-app.get('/api/github/repos', githubRateLimiter, async (req, res) => {
+app.get('/api/github/repos', githubApiLimiter, async (req, res) => {
     const githubToken = req.session.githubToken;
     if (!githubToken) return res.status(401).json({ success: false, error: 'Nav autorizēts' });
     try {
@@ -883,7 +883,7 @@ async function verifyNativePayment({ provider, txHash, expectedFrom, expectedAmo
 // PREPARE BACKUP — bez ZIP cenas aprēķina
 // ==================================================
 
-app.post('/api/prepare-backup', githubRateLimiter, async (req, res) => {
+app.post('/api/prepare-backup', githubApiLimiter, async (req, res) => {
     try {
         const { repoName, walletAddress } = req.body;
         const githubToken = req.session.githubToken;
@@ -1038,11 +1038,9 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
             return res.status(400).json({ success: false, error: 'Šifrēts ZIP ir obligāts' });
         }
         
-        // ✅ 1. Iegūst faila izmēru no diska (bez RAM lasīšanas)
         const fileStats = fs.statSync(req.file.path);
         const zipSize = fileStats.size;
         
-        // Pārbauda izmēru
         if (zipSize > MAX_REPO_BYTES * 2) {
             safeUnlink(req.file.path);
             return res.status(413).json({ success: false, error: 'Šifrētais ZIP ir pārāk liels.' });
@@ -1085,9 +1083,7 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                 return res.json({ success: true, step: 'zip_uploaded', zipTxId: currentJob.zipTxId, idempotent: true });
             }
             
-            // PIRMAIS PIEPRASĪJUMS — nav paymentTxHash
             if (!paymentTxHash) {
-                // VIENS Turbo aprēķins ar zipSize (nevis buffer.length)
                 const turbo = getTurbo();
                 const { winc: fileWinc, tokenPrice: fullFileCostEth } = await calculateTurboCost(turbo, zipSize);
                 
@@ -1101,7 +1097,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                 logInfo('Winc', fileWinc.toString());
                 
                 if (userCredits >= fileWinc) {
-                    // Kredīti pietiek — uzreiz rezervē un upload
                     const reserved = await reserveUserCredits(wallet, fileWinc);
                     if (!reserved) {
                         safeUnlink(req.file.path);
@@ -1117,7 +1112,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                     });
                     
                     try {
-                        // ✅ GALVENĀ IZMAIŅA: Straumē no diska uz Turbo
                         const zipResult = await uploadFileStreamToTurbo(
                             req.file.path,
                             zipSize,
@@ -1132,7 +1126,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                             ]
                         );
                         
-                        // ✅ Dzēš tikai pēc veiksmīgas augšupielādes
                         safeUnlink(req.file.path);
                         cancelFileCleanup(req.file.path);
                         
@@ -1153,8 +1146,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                     }
                 }
                 
-                // Kredītu nepietiek — saglabā cenu un prasa maksājumu
-                // Fails paliek uz diska, līdz klients atgriežas ar maksājumu
                 await updateJob(jobId, {
                     fileWinc: fileWinc.toString(),
                     fullFileCostEth,
@@ -1162,7 +1153,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                     updatedAt: Date.now()
                 });
                 
-                // Ieplāno faila dzēšanu pēc TTL
                 scheduleFileCleanup(req.file.path, JOB_TTL_SECONDS);
                 
                 return res.json({
@@ -1175,8 +1165,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                 });
             }
             
-            // OTRAIS PIEPRASĪJUMS — ar paymentTxHash
-            // IZMANTO SAGLABĀTO CENU, NEIZSAUC Turbo
             const fileWinc = BigInt(currentJob.fileWinc || '0');
             const fullFileCostEth = currentJob.fullFileCostEth;
             
@@ -1190,7 +1178,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
             const claimed = await claimPaymentTx(paymentTxHash, { jobId, stage: 'zip', walletAddress: wallet, amountWei: expectedWei.toString() });
             if (!claimed) throw new Error('Šī payment transakcija jau ir izmantota.');
             
-            // TREASURY → TURBO PAYMENT
             const paymentId = ethers.id(`${jobId}-zip`);
             await payTreasuryToTurbo(provider, expectedWei, paymentId);
             
@@ -1203,7 +1190,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
             const turbo = getTurbo();
             
             try {
-                // ✅ Straumē no diska uz Turbo
                 const zipResult = await uploadFileStreamToTurbo(
                     req.file.path,
                     zipSize,
@@ -1218,7 +1204,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
                     ]
                 );
                 
-                // ✅ Dzēš tikai pēc veiksmīgas augšupielādes
                 safeUnlink(req.file.path);
                 cancelFileCleanup(req.file.path);
                 
@@ -1238,7 +1223,6 @@ app.post('/api/execute-backup', backupLimiter, upload.single('file'), async (req
             }
         });
     } catch (error) {
-        // Notīra failu jebkuras kļūdas gadījumā
         if (req.file && req.file.path) {
             safeUnlink(req.file.path);
         }
@@ -1453,7 +1437,6 @@ app.post('/api/finalize-manifest', backupLimiter, async (req, res) => {
                 if (!claimed) throw new Error('Šī payment transakcija jau ir izmantota.');
                 paymentVerified = true;
                 
-                // TREASURY → TURBO PAYMENT
                 const paymentId = ethers.id(`${jobId}-manifest`);
                 await payTreasuryToTurbo(provider, expectedWei, paymentId);
             } else {
